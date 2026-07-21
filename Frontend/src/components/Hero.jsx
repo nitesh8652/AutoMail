@@ -11,6 +11,8 @@ const Hero = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
+
+
   const selectFile = (selectedFile) => {
     if (!selectedFile) return
     setFile(selectedFile)
@@ -99,9 +101,7 @@ const Hero = () => {
           {loading ? 'Reading file…' : 'Continue with file'}
           <ChevronRight className="w-[18px]" aria-hidden="true" />
         </button>
-        {error && (
-          <p className="mt-[13px] text-center text-[12px] font-semibold text-red-500">{error}</p>
-        )}
+      
         <p className="mt-[17px] flex items-center justify-center gap-[7px] text-[10px] text-[#8a9aa8]">
           <LockKeyhole className="w-[13px]" strokeWidth={1.7} aria-hidden="true" />
           Your data stays private and encrypted

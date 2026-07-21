@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useLocation } from 'react-router'
-import { FileSpreadsheet } from 'lucide-react'
+import { NavLink, useLocation } from 'react-router'
+import { ChevronRight, FileSpreadsheet } from 'lucide-react'
 
 const COLUMNS = [
   { key: 'email', label: 'Email' },
@@ -39,7 +39,7 @@ const FetchedData = () => {
   }, [location.state])
 
   return (
-    <section className="relative z-10 mx-auto w-[calc(100%-2rem)] max-w-[1180px] py-[45px] sm:w-[calc(100%-3rem)] sm:py-[55px] lg:py-[72px]">
+    <section className="relative z-10 mx-auto w-[calc(100%-2rem)] max-w-[14000px] py-[45px] sm:w-[calc(100%-3rem)] sm:py-[55px] lg:py-[72px]">
       <div className="mb-6">
         <span className="mb-[5px] block text-[10px] font-extrabold tracking-[0.13em] text-[#1070BA]">STEP 02</span>
         <h1 className="font-heading text-[28px] font-extrabold tracking-[-0.03em] text-[#102a43] sm:text-[34px]">Fetched Data</h1>
@@ -63,7 +63,7 @@ const FetchedData = () => {
                 {COLUMNS.map((column) => (
                   <th
                     key={column.key}
-                    className={`whitespace-nowrap border-b border-[#e3edf4] px-4 py-3 font-extrabold tracking-[0.02em] text-[#1070BA] ${column.key === 'prompt' ? 'min-w-[420px]' : ''}`}
+                    className={`whitespace-nowrap border-b border-[#e3edf4] px-4 py-3 font-extrabold tracking-[0.02em] text-[#1070BA] ${column.key === 'email' ? 'w-[30px]' : column.key === 'prompt' ? 'min-w-[420px]' : ''}`}
                   >
                     {column.label}
                   </th>
@@ -76,7 +76,7 @@ const FetchedData = () => {
                   {COLUMNS.map((column) => (
                     <td
                       key={column.key}
-                      className={`border-b border-[#e3edf4] px-4 py-3 align-top text-[#102a43] ${column.key === 'prompt' ? 'min-w-[420px] whitespace-normal leading-[1.6]' : 'whitespace-nowrap'}`}
+                      className={`border-b border-[#e3edf4] px-4 py-3 align-top text-[#102a43] ${column.key === 'prompt' ? 'min-w-[420px] whitespace-normal leading-[1.6]' : column.key === 'email' ? 'max-w-[700px] truncate' : 'whitespace-nowrap'}`}
                     >
                       {project[column.key]}
                     </td>
@@ -87,6 +87,14 @@ const FetchedData = () => {
           </table>
         </div>
       )}
+
+      <NavLink to='/status'>
+        <button className="mt-[22px] flex h-[52px] w-full items-center justify-center gap-2.5 rounded-xl border-0 bg-[#1070BA] font-bold text-white shadow-[0_10px_22px_rgba(16,112,186,0.22)] transition hover:-translate-y-px hover:bg-[#0c609f] disabled:cursor-not-allowed disabled:bg-[#e9eff3] disabled:text-[#94a5b2] disabled:shadow-none disabled:hover:translate-y-0" >
+          {/* {loading? 'Reading file…' : 'Continue with file'} */}
+          Fetch Prompt
+          <ChevronRight className="w-[18px]" aria-hidden="true" />
+        </button>
+      </NavLink>
     </section>
   )
 }
