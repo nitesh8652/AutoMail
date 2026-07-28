@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { ChevronRight, LockKeyhole, Upload } from 'lucide-react'
-import { extractProjectsFromFile } from '../config/Xlsx'
+import { AlertTriangle, ChevronRight, LockKeyhole, Upload } from 'lucide-react'
+import { extractProjectsFromFile } from '../../config/Xlsx'
+import { safeSetItem } from '../../config/storage'
 
 const Hero = () => {
   const inputRef = useRef(null)
@@ -10,6 +11,7 @@ const Hero = () => {
   const [dragging, setDragging] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [validateEmail, setValidateEmail] = useState(true)
 
 
 
@@ -29,9 +31,9 @@ const Hero = () => {
     setLoading(true)
     setError(null)
     try {
-      const projects = await extractProjectsFromFile(file)
+      const projects = await extractProjectsFromFile(file, { validateEmail })
       console.log(projects)
-      localStorage.setItem('fetchedProjects', JSON.stringify(projects))
+      safeSetItem('fetchedProjects', projects)
       navigate('/fetched', { state: { projects } })
     } catch (err) {
       console.error(err)
@@ -43,6 +45,22 @@ const Hero = () => {
 
   return (
     <section className="relative z-10 mx-auto grid min-h-[calc(100vh-74px)] w-[calc(100%-2rem)] max-w-[1180px] grid-cols-1 items-center gap-[42px] py-[45px] pb-[70px] sm:min-h-[calc(100vh-88px)] sm:w-[calc(100%-3rem)] sm:gap-[55px] sm:py-[55px] sm:pb-[90px] lg:grid-cols-[1fr_500px] lg:gap-[90px] lg:py-[72px] lg:pb-[110px]">
+      {error && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="mx-4 flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl bg-white p-8 text-center shadow-2xl">
+            <AlertTriangle className="h-12 w-12 text-red-500" strokeWidth={1.8} />
+            <h2 className="text-lg font-extrabold text-slate-800">Upload failed</h2>
+            <p className="text-sm text-slate-500">{error}</p>
+            <button
+              type="button"
+              onClick={() => setError(null)}
+              className="mt-2 rounded-xl bg-[#1070BA] px-8 py-2.5 text-sm font-bold text-white transition hover:-translate-y-px hover:bg-[#0c609f]"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
       <div className="text-center lg:text-left">
         <div className="mx-auto mb-[25px] flex w-fit items-center gap-2 rounded-full bg-[#eaf5fc] px-[13px] py-2 text-xs font-bold uppercase tracking-[0.08em] text-[#1070BA] lg:mx-0">
           <span className="h-[7px] w-[7px] rounded-full bg-[#1070BA] shadow-[0_0_0_4px_rgba(16,112,186,0.12)]" />
@@ -52,7 +70,7 @@ const Hero = () => {
           Turn your spreadsheet into <span className="text-[#1070BA]">action.</span>
         </h1>
         <p className="mx-auto my-[21px] mb-[30px] max-w-[560px] text-base leading-[1.65] text-[#617487] sm:my-[26px] sm:mb-[38px] sm:text-lg sm:leading-[1.75] lg:mx-0">
-          Upload your Excel file and let Express Rupya handle the rest—cleanly, securely, and in just a few clicks.
+          Upload your Excel or CSV file and let Auto Mail handle the rest—cleanly, securely, and in just a few clicks.
         </p>
 
         <div className="mx-auto flex items-center justify-center lg:mx-0 lg:justify-start" aria-label="Product benefits">
@@ -75,7 +93,7 @@ const Hero = () => {
             <span className="mb-[5px] block text-[10px] font-extrabold tracking-[0.13em] text-[#1070BA]">STEP 01</span>
             <h2 className="font-heading text-[22px] font-bold tracking-[-0.02em] text-[#102a43]">Upload your file</h2>
           </div>
-          <span className="rounded-md bg-[#edf7fd] px-[9px] py-1.5 text-[10px] font-extrabold tracking-[0.08em] text-[#1070BA]">.XLSX</span>
+          <span className="rounded-md bg-[#edf7fd] px-[9px] py-1.5 text-[10px] font-extrabold tracking-[0.08em] text-[#1070BA]">.XLSX / .CSV</span>
         </div>
 
         <button
@@ -92,12 +110,23 @@ const Hero = () => {
           {file ? (
             <><strong className="mb-[7px] max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[15px] text-[#1070BA]">{file.name}</strong><small className="mt-[18px] text-[10px] text-[#9aa9b6]">Click to choose a different file</small></>
           ) : (
-            <><strong className="mb-[7px] text-[15px] text-[#102a43]">Drop your Excel file here</strong><span className="text-[13px] text-[#7c8e9e]">or <em className="font-bold not-italic text-[#1070BA]">browse files</em> from your device</span><small className="mt-[18px] text-[10px] text-[#9aa9b6]">Maximum file size: 10 MB</small></>
+            <><strong className="mb-[7px] text-[15px] text-[#102a43]">Drop your Excel or CSV file here</strong><span className="text-[13px] text-[#7c8e9e]">or <em className="font-bold not-italic text-[#1070BA]">browse files</em> from your device</span><small className="mt-[18px] text-[10px] text-[#9aa9b6]">Maximum file size: 10 MB</small></>
           )}
         </button>
 
-        <input ref={inputRef} className="sr-only" type="file" accept=".xlsx,.xls" onChange={(event) => selectFile(event.target.files[0])} />
-        <button className="mt-[22px] flex h-[52px] w-full items-center justify-center gap-2.5 rounded-xl border-0 bg-[#1070BA] font-bold text-white shadow-[0_10px_22px_rgba(16,112,186,0.22)] transition hover:-translate-y-px hover:bg-[#0c609f] disabled:cursor-not-allowed disabled:bg-[#e9eff3] disabled:text-[#94a5b2] disabled:shadow-none disabled:hover:translate-y-0" type="button" disabled={!file || loading} onClick={handleContinue}>
+        <input ref={inputRef} className="sr-only" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => selectFile(event.target.files[0])} />
+
+        <label className="mt-[18px] flex cursor-pointer items-center gap-2.5 text-[13px] text-[#476072]">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-[#afd2e9] text-[#1070BA] accent-[#1070BA]"
+            checked={validateEmail}
+            onChange={(event) => setValidateEmail(event.target.checked)}
+          />
+          Skip rows with invalid email addresses
+        </label>
+
+        <button className="mt-[14px] flex h-[52px] w-full items-center justify-center gap-2.5 rounded-xl border-0 bg-[#1070BA] font-bold text-white shadow-[0_10px_22px_rgba(16,112,186,0.22)] transition hover:-translate-y-px hover:bg-[#0c609f] disabled:cursor-not-allowed disabled:bg-[#e9eff3] disabled:text-[#94a5b2] disabled:shadow-none disabled:hover:translate-y-0" type="button" disabled={!file || loading} onClick={handleContinue}>
           {loading ? 'Reading file…' : 'Continue with file'}
           <ChevronRight className="w-[18px]" aria-hidden="true" />
         </button>

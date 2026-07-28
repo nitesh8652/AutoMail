@@ -1,20 +1,24 @@
 import { Routes, Route } from 'react-router'
 import Navbar from '../components/Navbar'
-import Hero from '../components/Hero'
-import FetchedData from '../components/FetchedData'
-import Automation from '../components/Automation'
-import Status from '../components/Status'
+import Footer from '../components/Footer'
+import Hero from '../components/pages/Hero'
+import FetchedData from '../components/pages/FetchedData'
+import Automation from '../components/pages/Automation'
+import Status from '../components/pages/Status'
 
 const Myroutes = () => {
     return (
         <>
             <Navbar />
-            <Routes>
-                <Route path='/' element={<Hero/>} />
-                <Route path='/fetched' element={<FetchedData/>} />
-                <Route path='/automation' element={<Automation/>} />
-                <Route path='/status' element={<Status/>} />
-            </Routes>
+            <div className="flex-1">
+                <Routes>
+                    <Route path='/' element={<Hero/>} />
+                    <Route path='/fetched' element={<FetchedData/>} />
+                    <Route path='/automation' element={<Automation/>} />
+                    <Route path='/status' element={<Status/>} />
+                </Routes>
+            </div>
+            <Footer />
         </>
     )
 }

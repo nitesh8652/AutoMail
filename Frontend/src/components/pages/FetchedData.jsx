@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react'
-import { NavLink, useLocation } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import { ChevronRight, FileSpreadsheet } from 'lucide-react'
+import { generateEmailContent } from '../../config/api'
+import { safeSetItem } from '../../config/storage'
+import TypewriterLoader from '../TypewriterLoader'
 
 const COLUMNS = [
+  { key: 'srNo', label: 'SR No' },
+  { key: 'directorName', label: 'Director' },
   { key: 'email', label: 'Email' },
   { key: 'projectName', label: 'Project Name' },
   { key: 'projectType', label: 'Type' },
@@ -16,12 +21,15 @@ const COLUMNS = [
   { key: 'newLaunchPrice', label: 'Launched Price' },
   { key: 'absorbedUnits', label: 'Absorbed Units' },
   { key: 'constructionStage', label: 'Stage' },
-  { key: 'prompt', label: 'Message' },
+  // { key: 'prompt', label: 'Message' },
 ]
 
 const FetchedData = () => {
   const location = useLocation()
+  const navigate = useNavigate()
   const [projects, setProjects] = useState([])
+  const [generating, setGenerating] = useState(false)
+  const [generateError, setGenerateError] = useState(null)
 
   useEffect(() => {
     if (location.state?.projects) {
@@ -38,8 +46,38 @@ const FetchedData = () => {
     }
   }, [location.state])
 
+  const handleFetchPrompt = async () => {
+    if (projects.length === 0 || generating) return
+    setGenerating(true)
+    setGenerateError(null)
+    try {
+      const results = await Promise.all(
+        projects.map(async (project) => {
+          try {
+            const generatedEmail = await generateEmailContent(project.prompt)
+            return { ...project, generatedEmail, generationError: null }
+          } catch (err) {
+            return { ...project, generatedEmail: '', generationError: err.message || 'Failed to generate content.' }
+          }
+        })
+      )
+      safeSetItem('automationResults', results)
+      navigate('/automation', { state: { results } })
+    } catch (err) {
+      setGenerateError(err.message || 'Failed to generate emails.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   return (
     <section className="relative z-10 mx-auto w-[calc(100%-2rem)] max-w-[14000px] py-[45px] sm:w-[calc(100%-3rem)] sm:py-[55px] lg:py-[72px]">
+      {generating && (
+        <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-4 bg-white/85 backdrop-blur-sm">
+          <TypewriterLoader />
+          <p className="text-sm font-bold text-slate-600">Generating emails…</p>
+        </div>
+      )}
       <div className="mb-6">
         <span className="mb-[5px] block text-[10px] font-extrabold tracking-[0.13em] text-[#1070BA]">STEP 02</span>
         <h1 className="font-heading text-[28px] font-extrabold tracking-[-0.03em] text-[#102a43] sm:text-[34px]">Fetched Data</h1>
@@ -63,7 +101,7 @@ const FetchedData = () => {
                 {COLUMNS.map((column) => (
                   <th
                     key={column.key}
-                    className={`whitespace-nowrap border-b border-[#e3edf4] px-4 py-3 font-extrabold tracking-[0.02em] text-[#1070BA] ${column.key === 'email' ? 'w-[30px]' : column.key === 'prompt' ? 'min-w-[420px]' : ''}`}
+                    className={`whitespace-nowrap border-b border-[#e3edf4] px-4 py-3 font-extrabold tracking-[0.02em] text-[#1070BA] ${column.key === 'srNo' ? 'w-[50px]' : column.key === 'email' ? 'w-[30px]' : column.key === 'prompt' ? 'min-w-[420px]' : ''}`}
                   >
                     {column.label}
                   </th>
@@ -76,9 +114,9 @@ const FetchedData = () => {
                   {COLUMNS.map((column) => (
                     <td
                       key={column.key}
-                      className={`border-b border-[#e3edf4] px-4 py-3 align-top text-[#102a43] ${column.key === 'prompt' ? 'min-w-[420px] whitespace-normal leading-[1.6]' : column.key === 'email' ? 'max-w-[700px] truncate' : 'whitespace-nowrap'}`}
+                      className={`border-b border-[#e3edf4] px-4 py-3 align-top text-[#102a43] ${column.key === 'prompt' ? 'min-w-[420px] whitespace-normal leading-[1.6]' : column.key === 'email' ? 'max-w-[700px] truncate' : column.key === 'srNo' ? 'whitespace-nowrap text-center' : 'whitespace-nowrap'}`}
                     >
-                      {project[column.key]}
+                      {column.key === 'srNo' ? index + 1 : project[column.key]}
                     </td>
                   ))}
                 </tr>
@@ -88,13 +126,16 @@ const FetchedData = () => {
         </div>
       )}
 
-      <NavLink to='/status'>
-        <button className="mt-[22px] flex h-[52px] w-full items-center justify-center gap-2.5 rounded-xl border-0 bg-[#1070BA] font-bold text-white shadow-[0_10px_22px_rgba(16,112,186,0.22)] transition hover:-translate-y-px hover:bg-[#0c609f] disabled:cursor-not-allowed disabled:bg-[#e9eff3] disabled:text-[#94a5b2] disabled:shadow-none disabled:hover:translate-y-0" >
-          {/* {loading? 'Reading file…' : 'Continue with file'} */}
-          Fetch Prompt
-          <ChevronRight className="w-[18px]" aria-hidden="true" />
-        </button>
-      </NavLink>
+      <button
+        type="button"
+        className="mt-[22px] flex h-[52px] w-full items-center justify-center gap-2.5 rounded-xl border-0 bg-[#1070BA] font-bold text-white shadow-[0_10px_22px_rgba(16,112,186,0.22)] transition hover:-translate-y-px hover:bg-[#0c609f] disabled:cursor-not-allowed disabled:bg-[#e9eff3] disabled:text-[#94a5b2] disabled:shadow-none disabled:hover:translate-y-0"
+        disabled={projects.length === 0 || generating}
+        onClick={handleFetchPrompt}
+      >
+        {generating ? 'Generating emails…' : 'Fetch Prompt'}
+        <ChevronRight className="w-[18px]" aria-hidden="true" />
+      </button>
+      {generateError && <p className="mt-2 text-center text-[13px] text-red-600">{generateError}</p>}
     </section>
   )
 }

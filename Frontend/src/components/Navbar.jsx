@@ -1,28 +1,79 @@
+import { useState } from 'react'
 import { NavLink } from 'react-router'
-import { MessageSquareText } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
+
+const navLinks = [
+  { to: '/', label: 'Home' },
+  { to: '/fetched', label: 'Fetched Data' },
+  { to: '/automation', label: 'Automation' },
+  { to: '/status', label: 'Status' },
+]
 
 const Navbar = () => {
-  const linkStyles = 'transition-colors hover:text-[#1070BA] '
+  const [open, setOpen] = useState(false)
+
+  const linkStyles = ({ isActive }) =>
+    `relative py-1 transition-colors hover:text-[#1070BA] ${
+      isActive
+        ? 'text-[#1070BA] after:absolute after:-bottom-[3px] after:left-0 after:h-[2px] after:w-full after:rounded-full after:bg-[#1070BA]'
+        : 'text-[#536779]'
+    }`
+
+  const mobileLinkStyles = ({ isActive }) =>
+    `rounded-xl px-4 py-3 text-[15px] font-semibold transition-colors ${
+      isActive ? 'bg-[#eaf5fc] text-[#1070BA]' : 'text-[#3d5a73] hover:bg-[#f7fbfe] hover:text-[#1070BA]'
+    }`
 
   return (
-    <header className="relative z-10 mx-auto flex h-[74px] w-[calc(100%-2rem)] max-w-[1180px] items-center justify-between sm:h-[88px] sm:w-[calc(100%-3rem)]">
+    <header className="sticky bottom-0 z-50 border-t border-transparent bg-white/80 backdrop-blur-md">
+      <div className="mx-auto flex h-[74px] w-[calc(100%-2rem)] max-w-[1180px] items-center justify-between sm:h-[88px] sm:w-[calc(100%-3rem)]">
+        <NavLink
+          to="/"
+          onClick={() => setOpen(false)}
+          className="inline-flex items-center gap-2 text-[41px] font-medium tracking-[-0.4px] sm:gap-[11px]"
+          aria-label="Express Rupya home"
+        >
+          <img
+            src="/express_logo_automation.png"
+            alt="Express Rupya"
+            style={{ height: '52px', width: '226px' }}
+          />
+          {/* <span>
+            Express <strong className="text-[#1070BA]">Rupya</strong>
+          </span> */}
+        </NavLink>
 
+        <nav className="hidden items-center gap-[34px] text-m font-medium md:flex" aria-label="Primary navigation">
+          {navLinks.map(({ to, label }) => (
+            <NavLink key={to} to={to} className={linkStyles} end={to === '/'}>
+              {label}
+            </NavLink>
+          ))}
+        </nav>
 
-      <NavLink to='/' className="inline-flex items-center gap-2 text-base font-medium tracking-[-0.4px] sm:gap-[11px] sm:text-[19px]" aria-label="Express Rupya home">
-        <span className="grid h-[34px] w-[34px] place-items-center rounded-[11px] bg-[#1070BA] text-white shadow-[0_8px_20px_rgba(16,112,186,0.22)] sm:h-[38px] sm:w-[38px]" aria-hidden="true">
-          <MessageSquareText className="w-[23px]" strokeWidth={1.8} />
-        </span>
+        <button
+          type="button"
+          className="grid h-10 w-10 place-items-center rounded-xl text-[#1070BA] transition-colors hover:bg-[#eaf5fc] md:hidden"
+          onClick={() => setOpen((prev) => !prev)}
+          aria-label={open ? 'Close menu' : 'Open menu'}
+          aria-expanded={open}
+        >
+          {open ? <X className="w-6" strokeWidth={1.8} /> : <Menu className="w-6" strokeWidth={1.8} />}
+        </button>
+      </div>
 
-        <span>Express <strong className="text-[#1070BA]">Rupya</strong></span>
-      </NavLink>
-      <nav className="hidden items-center gap-[34px] text-m font-medium text-[#536779] md:flex" aria-label="Primary navigation">
-        <NavLink className={linkStyles} to="/">Home</NavLink>
-        <NavLink className={linkStyles} to="/fetched">Fetched Data</NavLink>
-        <NavLink className={linkStyles} to="/Automation">Automation</NavLink>
-        <NavLink className={linkStyles} to="/status">Status</NavLink> 
-      </nav>
-
-      <a className="rounded-[10px] border border-[#c8e0f1] px-[13px] py-2.5 text-xs font-bold text-[#1070BA] transition-colors hover:border-[#1070BA] hover:bg-[#1070BA] hover:text-white sm:px-[19px] sm:py-[11px] sm:text-sm" href="#upload">Get started</a>
+      {open && (
+        <nav
+          className="mx-auto flex w-[calc(100%-2rem)] max-w-[1180px] flex-col gap-1 border-t border-[#e3edf4] py-3 sm:w-[calc(100%-3rem)] md:hidden"
+          aria-label="Primary navigation"
+        >
+          {navLinks.map(({ to, label }) => (
+            <NavLink key={to} to={to} className={mobileLinkStyles} end={to === '/'} onClick={() => setOpen(false)}>
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+      )}
     </header>
   )
 }
