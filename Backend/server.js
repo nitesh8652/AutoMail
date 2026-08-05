@@ -1,13 +1,16 @@
 require('dotenv').config();
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 
 const app = express()
-const port = 3000
+const port = process.env.PORT || 7300
+const frontendDist = path.join(__dirname, '../Frontend/dist')
 
 app.use(cors())
 app.use(express.json())
+app.use(express.static(frontendDist))
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -84,6 +87,13 @@ app.post('/api/send-email', async (req, res) => {
     console.error(error)
     res.status(500).json({ error: 'Failed to send email.' })
   }
+})
+
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api')) {
+    return res.sendFile(path.join(frontendDist, 'index.html'))
+  }
+  next()
 })
 
 app.listen(port, () => {

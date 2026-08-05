@@ -1,5 +1,9 @@
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  `${window.location.protocol}//${window.location.hostname}:7301`
+
 export const generateEmailContent = async (prompt) => {
-  const response = await fetch('/api/generate-email', {
+  const response = await fetch(`${API_BASE}/api/generate-email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt }),
@@ -10,7 +14,7 @@ export const generateEmailContent = async (prompt) => {
 }
 
 export const sendEmail = async ({ to, subject, text }) => {
-  const response = await fetch('/api/send-email', {
+  const response = await fetch(`${API_BASE}/api/send-email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ to, subject, text }),
