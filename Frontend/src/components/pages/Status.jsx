@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle, XCircle, Send, Download, Clock } from 'lucide-react'
+import { AlertTriangle, CheckCircle, XCircle, Send, Download, Clock, Trash2 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 const formatTimestamp = (timestamp) => {
@@ -61,6 +61,7 @@ const StatusCard = ({ company, projectName, directorName, status, email, timesta
 
 const Status = () => {
   const [logs, setLogs] = useState([])
+  const [confirmClear, setConfirmClear] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem('emailStatusLogs')
@@ -88,8 +89,42 @@ const Status = () => {
     XLSX.writeFile(workbook, `email-status-${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
+  const handleClearAll = () => {
+    localStorage.removeItem('emailStatusLogs')
+    window.dispatchEvent(new Event('emailStatusLogsUpdated'))
+    setLogs([])
+    setConfirmClear(false)
+  }
+
   return (
     <section className="relative z-10 mx-auto w-[calc(100%-2rem)] max-w-[800px] py-[45px] sm:w-[calc(100%-3rem)] sm:py-[55px] lg:py-[72px]">
+      {confirmClear && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="mx-4 flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl bg-white p-8 text-center shadow-2xl">
+            <AlertTriangle className="h-12 w-12 text-red-500" strokeWidth={1.8} />
+            <h2 className="text-lg font-extrabold text-slate-800">Clear all email logs?</h2>
+            <p className="text-sm text-slate-500">
+              This removes all {logs.length} email status record{logs.length > 1 ? 's' : ''}. This cannot be undone.
+            </p>
+            <div className="mt-2 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmClear(false)}
+                className="rounded-xl border border-slate-200 bg-white px-6 py-2.5 text-sm font-bold text-slate-600 transition hover:-translate-y-px hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="rounded-xl bg-red-500 px-6 py-2.5 text-sm font-bold text-white transition hover:-translate-y-px hover:bg-red-600"
+              >
+                Clear all
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
           <span className="mb-[5px] block text-[10px] font-extrabold tracking-[0.13em] text-[#1070BA]">STATUS</span>
@@ -104,6 +139,15 @@ const Status = () => {
         </div>
 
         {logs.length > 0 && (
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setConfirmClear(true)}
+            className="flex shrink-0 items-center gap-2 rounded-xl border border-red-300 bg-white px-4 py-2.5 text-[13px] font-bold text-red-500 shadow-sm transition hover:-translate-y-px hover:bg-red-50"
+          >
+            <Trash2 className="h-4 w-4" strokeWidth={2} />
+            Clear All
+          </button>
           <button
             type="button"
             onClick={handleDownload}
@@ -112,6 +156,7 @@ const Status = () => {
             <Download className="h-4 w-4" strokeWidth={2} />
             Download Excel
           </button>
+          </div>
         )}
       </div>
 

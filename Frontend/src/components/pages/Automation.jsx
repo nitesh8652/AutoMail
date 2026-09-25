@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { Check, CheckCircle2, ChevronDown, RefreshCw, Send, UserRoundMinusIcon, XCircle } from 'lucide-react'
-import { generateEmailContent, sendEmail } from '../../config/api'
+import { generateEmailForRecord, sendEmail } from '../../config/api'
 import { safeSetItem } from '../../config/storage'
 import Loader from '../Loader'
 
@@ -165,7 +165,7 @@ const Automation = () => {
     setProjects((prev) => prev.map((p, i) => (i === index ? { ...p, regenerating: true } : p)))
 
     try {
-      const generatedEmail = await generateEmailContent(project.prompt)
+      const generatedEmail = await generateEmailForRecord(project)
       setProjects((prev) =>
         prev.map((p, i) =>
           i === index

@@ -1,8 +1,24 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, ChevronRight, LockKeyhole, Upload } from 'lucide-react'
-import { extractProjectsFromFile } from '../../config/Xlsx'
+import { extractNbfcFromFile, extractProjectsFromFile } from '../../config/Xlsx'
 import { safeSetItem } from '../../config/storage'
+
+const MODES = [
+  { key: 'marketing', label: 'Marketing' },
+  { key: 'nbfc', label: 'NBFC' },
+]
+
+const MODE_STORAGE_KEY = 'emailMode'
+
+const loadSavedMode = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MODE_STORAGE_KEY))
+    return MODES.some(({ key }) => key === saved) ? saved : 'marketing'
+  } catch {
+    return 'marketing'
+  }
+}
 
 const Hero = () => {
   const inputRef = useRef(null)
@@ -12,6 +28,12 @@ const Hero = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [validateEmail, setValidateEmail] = useState(true)
+  const [mode, setMode] = useState(loadSavedMode)
+
+  const selectMode = (nextMode) => {
+    setMode(nextMode)
+    safeSetItem(MODE_STORAGE_KEY, nextMode)
+  }
 
 
 
@@ -31,7 +53,8 @@ const Hero = () => {
     setLoading(true)
     setError(null)
     try {
-      const projects = await extractProjectsFromFile(file, { validateEmail })
+      const extract = mode === 'nbfc' ? extractNbfcFromFile : extractProjectsFromFile
+      const projects = await extract(file, { validateEmail })
       console.log(projects)
       safeSetItem('fetchedProjects', projects)
       navigate('/fetched', { state: { projects } })
@@ -88,6 +111,25 @@ const Hero = () => {
       </div>
 
       <div className="relative mx-auto w-full max-w-[540px] rounded-[18px] border border-[#e3edf4] bg-white/95 p-[22px] shadow-[0_24px_70px_rgba(22,65,96,0.12)] before:absolute before:-inset-[14px] before:-z-10 before:rounded-[30px] before:border before:border-[#1070BA]/10 sm:rounded-[22px] sm:p-8" id="upload">
+        <div className="relative mb-6 grid grid-cols-2 rounded-xl bg-[#edf7fd] p-1" role="tablist" aria-label="Email type">
+          <span
+            className={`absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-lg bg-[#1070BA] shadow-[0_6px_16px_rgba(16,112,186,0.25)] transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${mode === 'nbfc' ? 'translate-x-full' : 'translate-x-0'}`}
+            aria-hidden="true"
+          />
+          {MODES.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={mode === key}
+              onClick={() => selectMode(key)}
+              className={`relative z-10 h-10 rounded-lg text-[13px] font-extrabold tracking-[0.04em] transition-colors duration-300 ${mode === key ? 'text-white' : 'text-[#1070BA] hover:text-[#0c609f]'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <div className="mb-6 flex items-start justify-between">
           <div>
             <span className="mb-[5px] block text-[10px] font-extrabold tracking-[0.13em] text-[#1070BA]">STEP 01</span>

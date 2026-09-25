@@ -137,3 +137,122 @@ export const extractProjectsFromFile = (file, { validateEmail = true } = {}) => 
     reader.readAsArrayBuffer(file)
   })
 }
+
+// ---------- NBFC mode ----------
+
+const NBFC_HEADER_PATTERNS = {
+  email: /^e[-\s]?mail/i,
+  companyName: /^(company\s*)?name$/i,
+  contactName: /^(contact|director|person|first\s*name)/i,
+}
+
+const NBFC_DESCRIPTION_INSTRUCTION =
+  'For each company name shared, provide a short one-line description explaining what business the company is engaged in.'
+
+const NBFC_SIGNATURE_BLOCK = `Best regards,
+Diya
+Express Rupya Capital Advisors
++91 81693 45033 | www.expressrupya.com
+Your partner for growth!`
+
+const buildNbfcPrompt = (companyName) =>
+  `${NBFC_DESCRIPTION_INSTRUCTION}\n\n` +
+  `Company name: ${companyName}\n\n` +
+  `Write the description so it reads naturally right after the words "We understand that" — ` +
+  `start with the company name, keep it to one sentence, and return only that sentence with no quotes or extra commentary.`
+
+export const buildNbfcEmail = (record, description) => {
+  const greetingName = toFirstNameTitleCase(record.contactName) || 'Sir/Madam'
+  const company = record.companyName || 'your company'
+  const cleaned = String(description ?? '')
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/^we understand that\s*/i, '')
+    .replace(/\.+$/, '')
+
+  return (
+    `Subject: Structured Debt Funding Support for ${company}\n\n` +
+    `Dear ${greetingName},\n\n` +
+    `We understand that ${cleaned}.\n\n` +
+    `At Express Rupya Capital Advisors, we assist businesses in raising structured debt through banks, NBFCs, AIFs, private credit funds and institutional lenders.\n\n` +
+    `We can support ${company} with funding solutions such as working capital, project finance, refinancing and structured debt solutions.\n\n` +
+    `We would be happy to connect and understand your funding requirements.\n\n` +
+    NBFC_SIGNATURE_BLOCK
+  )
+}
+
+const matchNbfcHeaders = (headers) => {
+  const map = {}
+  headers.forEach((header) => {
+    const trimmed = header.trim()
+    Object.entries(NBFC_HEADER_PATTERNS).forEach(([field, pattern]) => {
+      if (!map[field] && pattern.test(trimmed)) map[field] = header
+    })
+  })
+  return map
+}
+
+export const extractNbfcFromFile = (file, { validateEmail = true } = {}) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.onload = (event) => {
+      try {
+        const workbook = XLSX.read(event.target.result, { type: 'array' })
+        let foundEmailColumn = false
+        let foundNameColumn = false
+        const records = []
+
+        workbook.SheetNames.forEach((sheetName) => {
+          const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' })
+          if (rows.length === 0) return
+
+          const headerMap = matchNbfcHeaders(Object.keys(rows[0]))
+          if (!headerMap.email) return
+          foundEmailColumn = true
+          if (!headerMap.companyName) return
+          foundNameColumn = true
+
+          rows.forEach((row) => {
+            const companyName = String(row[headerMap.companyName] ?? '').trim()
+            const emails = splitLines(row[headerMap.email])
+            if (!companyName || emails.length === 0) return
+
+            const contactNames = headerMap.contactName ? splitLines(row[headerMap.contactName]) : []
+
+            emails.forEach((email, index) => {
+              if (validateEmail && !EMAIL_PATTERN.test(email)) return
+              records.push({
+                mode: 'nbfc',
+                email,
+                companyName,
+                contactName: contactNames[index] ?? '',
+                // Reused by the Automation card header and Status logs.
+                projectName: companyName,
+                directorName: contactNames[index] ?? '',
+                prompt: buildNbfcPrompt(companyName),
+              })
+            })
+          })
+        })
+
+        if (!foundEmailColumn) {
+          reject(new Error('No "Email" column found in the uploaded file.'))
+          return
+        }
+        if (!foundNameColumn) {
+          reject(new Error('No "Name" column found in the uploaded file.'))
+          return
+        }
+
+        resolve(records)
+      } catch (error) {
+        reject(error)
+      }
+    }
+
+    reader.onerror = () => reject(reader.error)
+
+    reader.readAsArrayBuffer(file)
+  })
+}
