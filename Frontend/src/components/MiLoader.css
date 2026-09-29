@@ -1,0 +1,56 @@
+/* Sized in em so the `size` prop (font-size) scales the whole loader. */
+.mi-loader {
+  position: relative;
+  width: 5.5em;
+  height: 5.5em;
+}
+
+.mi-loader::before {
+  content: "";
+  position: absolute;
+  transform: translate(-50%, -50%) rotate(90deg);
+  height: 50%;
+  width: 1.5em;
+  background: #d7ebf8;
+  border-radius: 50%;
+  left: 50%;
+  top: 50%;
+  animation: mi-loader-bounce1 1s ease-in-out infinite;
+}
+
+.mi-loader::after {
+  content: "";
+  position: absolute;
+  left: 2.24em;
+  top: 1.72em;
+  width: 1em;
+  height: 0.96em;
+  background-color: #1070ba;
+  border-radius: 50%;
+  animation: mi-loader-bounce2 1s ease-in-out infinite;
+}
+
+@keyframes mi-loader-bounce1 {
+  90% {
+    top: 49%;
+    box-shadow: 0.125em 0 0 #1070ba;
+  }
+}
+
+@keyframes mi-loader-bounce2 {
+  50% {
+    top: -0.24em;
+    height: 1em;
+  }
+  75% {
+    top: -0.26em;
+    height: 1em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mi-loader::before,
+  .mi-loader::after {
+    animation-duration: 2.5s;
+  }
+}

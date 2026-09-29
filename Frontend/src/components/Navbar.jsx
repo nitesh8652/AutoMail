@@ -1,16 +1,35 @@
-import { useState } from 'react'
-import { NavLink } from 'react-router'
+import { useEffect, useState } from 'react'
+import { NavLink, useLocation } from 'react-router'
 import { Menu, X } from 'lucide-react'
+import { fetchIntelligenceHasData } from '../config/api'
 
 const navLinks = [
   { to: '/', label: 'Home' },
   { to: '/fetched', label: 'Fetched Data' },
+  { to: '/intelligence', label: 'Intelligence', intelligenceOnly: true },
   { to: '/automation', label: 'Automation' },
   { to: '/status', label: 'Status' },
 ]
 
 const Navbar = () => {
   const [open, setOpen] = useState(false)
+  const { pathname } = useLocation()
+  // "Intelligence" only appears once a Marketing Intelligence upload is saved in the database.
+  const [hasIntelligence, setHasIntelligence] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    fetchIntelligenceHasData()
+      .then((hasData) => active && setHasIntelligence(hasData))
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [pathname])
+
+  const visibleLinks = navLinks.filter(
+    (link) => !link.intelligenceOnly || hasIntelligence || pathname === link.to
+  )
 
   const linkStyles = ({ isActive }) =>
     `relative py-1 transition-colors hover:text-[#1070BA] ${
@@ -44,7 +63,7 @@ const Navbar = () => {
         </NavLink>
 
         <nav className="hidden items-center gap-[34px] text-m font-medium md:flex" aria-label="Primary navigation">
-          {navLinks.map(({ to, label }) => (
+          {visibleLinks.map(({ to, label }) => (
             <NavLink key={to} to={to} className={linkStyles} end={to === '/'}>
               {label}
             </NavLink>
@@ -67,7 +86,7 @@ const Navbar = () => {
           className="mx-auto flex w-[calc(100%-2rem)] max-w-[1180px] flex-col gap-1 border-t border-[#e3edf4] py-3 sm:w-[calc(100%-3rem)] md:hidden"
           aria-label="Primary navigation"
         >
-          {navLinks.map(({ to, label }) => (
+          {visibleLinks.map(({ to, label }) => (
             <NavLink key={to} to={to} className={mobileLinkStyles} end={to === '/'} onClick={() => setOpen(false)}>
               {label}
             </NavLink>

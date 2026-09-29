@@ -1,33 +1,45 @@
 import { useEffect, useState } from 'react'
 import { Send } from 'lucide-react'
+import { fetchTodayEmailStats } from '../config/api'
 
-// Gmail's practical daily send cap for a single account.
-const DAILY_GOAL = 200
-
-const getSentToday = () => {
-  try {
-    const logs = JSON.parse(localStorage.getItem('emailStatusLogs') || '[]')
-    const today = new Date().toDateString()
-    return logs.filter((log) => log.status === 'received' && new Date(log.timestamp).toDateString() === today).length
-  } catch {
-    return 0
-  }
-}
+// Fallback until the server replies; the server's DAILY_EMAIL_CAP is the source of truth.
+const DEFAULT_DAILY_GOAL = 250
+// How often other devices pick up sends made elsewhere.
+const POLL_MS = 15000
 
 const Footer = () => {
-  const [sentToday, setSentToday] = useState(getSentToday)
+  const [sentToday, setSentToday] = useState(null)
+  const [dailyGoal, setDailyGoal] = useState(DEFAULT_DAILY_GOAL)
 
   useEffect(() => {
-    const refresh = () => setSentToday(getSentToday())
-    window.addEventListener('storage', refresh)
+    let active = true
+    const refresh = async () => {
+      try {
+        const stats = await fetchTodayEmailStats()
+        if (!active) return
+        setSentToday(stats.sent)
+        setDailyGoal(stats.cap || DEFAULT_DAILY_GOAL)
+      } catch (err) {
+        console.warn(err.message)
+      }
+    }
+    const refreshWhenVisible = () => document.visibilityState === 'visible' && refresh()
+
+    refresh()
+    const timer = setInterval(refreshWhenVisible, POLL_MS)
     window.addEventListener('emailStatusLogsUpdated', refresh)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
     return () => {
-      window.removeEventListener('storage', refresh)
+      active = false
+      clearInterval(timer)
       window.removeEventListener('emailStatusLogsUpdated', refresh)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [])
 
-  const progress = Math.min((sentToday / DAILY_GOAL) * 100, 100)
+  const progress = Math.min(((sentToday ?? 0) / dailyGoal) * 100, 100)
 
   return (
     <footer className="sticky bottom-0 z-40 border-t border-[#e3edf4] bg-white/85 backdrop-blur-md">
@@ -39,9 +51,9 @@ const Footer = () => {
         <div
           className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#e3edf4]"
           role="progressbar"
-          aria-valuenow={sentToday}
+          aria-valuenow={sentToday ?? 0}
           aria-valuemin={0}
-          aria-valuemax={DAILY_GOAL}
+          aria-valuemax={dailyGoal}
           aria-label="Emails sent today"
         >
           <div
@@ -50,8 +62,8 @@ const Footer = () => {
           />
         </div>
         <span className="shrink-0 text-[11px] font-bold text-[#102a43]">
-          {sentToday}
-          <span className="font-medium text-[#8394a5]"> / {DAILY_GOAL} sent</span>
+          {sentToday ?? '–'}
+          <span className="font-medium text-[#8394a5]"> / {dailyGoal} sent</span>
         </span>
       </div>
     </footer>

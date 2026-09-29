@@ -3,14 +3,18 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
+const intelRoutes = require('./routes/intel');
+const pool = require('./db');
+const { PORT } = require('./config');
 
 const app = express()
-const port = process.env.PORT || 7301
+const port = PORT
 const frontendDist = path.join(__dirname, '../Frontend/dist')
 
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '20mb' }))
 app.use(express.static(frontendDist))
+app.use('/api/intel', intelRoutes)
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -18,6 +22,42 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+})
+
+// Gmail's practical daily send cap for a single account.
+const DAILY_EMAIL_CAP = 250
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000
+
+// Midnight India time, so "today" doesn't depend on the server's timezone.
+const startOfTodayIST = () => {
+  const now = Date.now() + IST_OFFSET_MS
+  return new Date(now - (now % (24 * 60 * 60 * 1000)) - IST_OFFSET_MS)
+}
+
+// Logged server-side so every device sees the same daily count. A logging failure never fails the send.
+const logSend = (to, subject, status, errorMessage = null) =>
+  pool
+    .query('INSERT INTO email_send_log (to_email, subject, status, error_message, created_at) VALUES (?, ?, ?, ?, ?)', [
+      to.slice(0, 255),
+      subject.slice(0, 500) || null,
+      status,
+      errorMessage ? String(errorMessage).slice(0, 500) : null,
+      new Date(),
+    ])
+    .catch((error) => console.error('Failed to log email send:', error.sqlMessage || error.message))
+
+app.get('/api/email-stats/today', async (req, res) => {
+  try {
+    const [[row]] = await pool.query(
+      `SELECT COALESCE(SUM(status = 'sent'), 0) AS sent, COALESCE(SUM(status = 'failed'), 0) AS failed
+       FROM email_send_log WHERE created_at >= ?`,
+      [startOfTodayIST()]
+    )
+    res.json({ sent: Number(row.sent), failed: Number(row.failed), cap: DAILY_EMAIL_CAP })
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: `Failed to load today's email count — ${error.sqlMessage || error.message}` })
+  }
 })
 
 app.get('/', (req, res) => {
@@ -82,9 +122,11 @@ app.post('/api/send-email', async (req, res) => {
       subject: subject || 'Regarding your project',
       text,
     })
+    await logSend(to, subject, 'sent')
     res.json({ success: true, messageId: info.messageId })
   } catch (error) {
     console.error(error)
+    await logSend(to, subject, 'failed', error.message)
     res.status(500).json({ error: 'Failed to send email.' })
   }
 })

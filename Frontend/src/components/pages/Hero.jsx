@@ -1,13 +1,51 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { AlertTriangle, ChevronRight, LockKeyhole, Upload } from 'lucide-react'
-import { extractNbfcFromFile, extractProjectsFromFile } from '../../config/Xlsx'
-import { safeSetItem } from '../../config/storage'
+import { AlertTriangle, ChevronRight, Database, LockKeyhole, Upload } from 'lucide-react'
+import { extractNbfcFromFile, extractProjectsFromFile, readIntelligenceFiles } from '../../config/Xlsx'
+import { uploadIntelligenceData } from '../../config/api'
+import { LAST_SCAN_STORAGE_KEY, safeSetItem } from '../../config/storage'
+import NbfcFollowUp from '../NbfcFollowUp'
+import { MiLoaderOverlay } from '../MiLoader'
 
 const MODES = [
   { key: 'marketing', label: 'Marketing' },
   { key: 'nbfc', label: 'NBFC' },
+  { key: 'intelligence', label: 'Intelligence' },
 ]
+
+const INTELLIGENCE_FILES = [
+  { key: 'contacts', label: 'Email file', hint: 'Company Name, Director Name, Director Email' },
+  { key: 'values', label: 'Value file', hint: 'Name, Enquiry Amount, Facility Name' },
+]
+
+const FileSlot = ({ label, hint, file, onSelect }) => {
+  const inputRef = useRef(null)
+  const [dragging, setDragging] = useState(false)
+
+  return (
+    <>
+      <button
+        className={`flex min-h-[100px] w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-[1.5px] border-dashed px-3.5 py-4 text-center transition duration-200 ${dragging ? '-translate-y-0.5 border-[#1070BA] bg-[#eff8fe]' : 'border-[#afd2e9] bg-[#f7fbfe] hover:-translate-y-0.5 hover:border-[#1070BA] hover:bg-[#eff8fe]'}`}
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => { event.preventDefault(); setDragging(false); onSelect(event.dataTransfer.files[0]) }}
+      >
+        <span className="mb-1 flex items-center gap-2 text-[13px] font-extrabold text-[#102a43]">
+          <Upload className="w-4 text-[#1070BA]" strokeWidth={1.8} aria-hidden="true" />
+          {label}
+        </span>
+        {file ? (
+          <strong className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-[#1070BA]">{file.name}</strong>
+        ) : (
+          <span className="text-[11px] text-[#7c8e9e]">{hint}</span>
+        )}
+      </button>
+      <input ref={inputRef} className="sr-only" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { onSelect(event.target.files[0]); event.target.value = '' }} />
+    </>
+  )
+}
 
 const MODE_STORAGE_KEY = 'emailMode'
 
@@ -26,9 +64,13 @@ const Hero = () => {
   const [file, setFile] = useState(null)
   const [dragging, setDragging] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(null)
   const [error, setError] = useState(null)
   const [validateEmail, setValidateEmail] = useState(true)
   const [mode, setMode] = useState(loadSavedMode)
+  const [intelFiles, setIntelFiles] = useState({ contacts: null, values: null })
+  const isIntelligence = mode === 'intelligence'
+  const ready = isIntelligence ? Boolean(intelFiles.contacts && intelFiles.values) : Boolean(file)
 
   const selectMode = (nextMode) => {
     setMode(nextMode)
@@ -42,6 +84,11 @@ const Hero = () => {
     setFile(selectedFile)
     setError(null)
   }
+  const selectIntelFile = (key, selectedFile) => {
+    if (!selectedFile) return
+    setIntelFiles((prev) => ({ ...prev, [key]: selectedFile }))
+    setError(null)
+  }
   const handleDrop = (event) => {
     event.preventDefault()
     setDragging(false)
@@ -49,10 +96,18 @@ const Hero = () => {
   }
 
   const handleContinue = async () => {
-    if (!file) return
+    if (!ready) return
     setLoading(true)
     setError(null)
     try {
+      if (isIntelligence) {
+        // Save both sheets, then show everything saved so far (old + new) from the database.
+        const data = await readIntelligenceFiles(intelFiles.contacts, intelFiles.values, { validateEmail })
+        const saved = await uploadIntelligenceData(data, (done, total) => setUploadProgress({ done, total }))
+        safeSetItem(LAST_SCAN_STORAGE_KEY, { ...data.scan, saved, scannedAt: new Date().toISOString() })
+        navigate('/intelligence')
+        return
+      }
       const extract = mode === 'nbfc' ? extractNbfcFromFile : extractProjectsFromFile
       const projects = await extract(file, { validateEmail })
       console.log(projects)
@@ -63,10 +118,21 @@ const Hero = () => {
       setError(err.message || 'Failed to read the file.')
     } finally {
       setLoading(false)
+      setUploadProgress(null)
     }
   }
 
   return (
+    <>
+    {loading && (
+      <MiLoaderOverlay
+        message={
+          isIntelligence
+            ? `Saving files…${uploadProgress ? ` batch ${uploadProgress.done} of ${uploadProgress.total}` : ''}`
+            : 'Reading file…'
+        }
+      />
+    )}
     <section className="relative z-10 mx-auto grid min-h-[calc(100vh-74px)] w-[calc(100%-2rem)] max-w-[1180px] grid-cols-1 items-center gap-[42px] py-[45px] pb-[70px] sm:min-h-[calc(100vh-88px)] sm:w-[calc(100%-3rem)] sm:gap-[55px] sm:py-[55px] sm:pb-[90px] lg:grid-cols-[1fr_500px] lg:gap-[90px] lg:py-[72px] lg:pb-[110px]">
       {error && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -111,9 +177,10 @@ const Hero = () => {
       </div>
 
       <div className="relative mx-auto w-full max-w-[540px] rounded-[18px] border border-[#e3edf4] bg-white/95 p-[22px] shadow-[0_24px_70px_rgba(22,65,96,0.12)] before:absolute before:-inset-[14px] before:-z-10 before:rounded-[30px] before:border before:border-[#1070BA]/10 sm:rounded-[22px] sm:p-8" id="upload">
-        <div className="relative mb-6 grid grid-cols-2 rounded-xl bg-[#edf7fd] p-1" role="tablist" aria-label="Email type">
+        <div className="relative mb-6 grid grid-cols-3 rounded-xl bg-[#edf7fd] p-1" role="tablist" aria-label="Email type">
           <span
-            className={`absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-lg bg-[#1070BA] shadow-[0_6px_16px_rgba(16,112,186,0.25)] transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${mode === 'nbfc' ? 'translate-x-full' : 'translate-x-0'}`}
+            className="absolute inset-y-1 left-1 w-[calc((100%-8px)/3)] rounded-lg bg-[#1070BA] shadow-[0_6px_16px_rgba(16,112,186,0.25)] transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            style={{ transform: `translateX(${MODES.findIndex(({ key }) => key === mode) * 100}%)` }}
             aria-hidden="true"
           />
           {MODES.map(({ key, label }) => (
@@ -133,30 +200,40 @@ const Hero = () => {
         <div className="mb-6 flex items-start justify-between">
           <div>
             <span className="mb-[5px] block text-[10px] font-extrabold tracking-[0.13em] text-[#1070BA]">STEP 01</span>
-            <h2 className="font-heading text-[22px] font-bold tracking-[-0.02em] text-[#102a43]">Upload your file</h2>
+            <h2 className="font-heading text-[22px] font-bold tracking-[-0.02em] text-[#102a43]">{isIntelligence ? 'Upload your files' : 'Upload your file'}</h2>
           </div>
           <span className="rounded-md bg-[#edf7fd] px-[9px] py-1.5 text-[10px] font-extrabold tracking-[0.08em] text-[#1070BA]">.XLSX / .CSV</span>
         </div>
 
-        <button
-          className={`flex min-h-[210px] w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-[1.5px] border-dashed px-3.5 py-[22px] transition duration-200 sm:min-h-[230px] sm:p-7 ${dragging ? '-translate-y-0.5 border-[#1070BA] bg-[#eff8fe]' : 'border-[#afd2e9] bg-[#f7fbfe] hover:-translate-y-0.5 hover:border-[#1070BA] hover:bg-[#eff8fe]'}`}
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={handleDrop}
-        >
-          <span className="mb-[17px] grid h-[52px] w-[52px] place-items-center rounded-[14px] bg-white text-[#1070BA] shadow-[0_7px_20px_rgba(16,112,186,0.12)]" aria-hidden="true">
-            <Upload className="w-[25px]" strokeWidth={1.8} />
-          </span>
-          {file ? (
-            <><strong className="mb-[7px] max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[15px] text-[#1070BA]">{file.name}</strong><small className="mt-[18px] text-[10px] text-[#9aa9b6]">Click to choose a different file</small></>
-          ) : (
-            <><strong className="mb-[7px] text-[15px] text-[#102a43]">Drop your Excel or CSV file here</strong><span className="text-[13px] text-[#7c8e9e]">or <em className="font-bold not-italic text-[#1070BA]">browse files</em> from your device</span><small className="mt-[18px] text-[10px] text-[#9aa9b6]">Maximum file size: 10 MB</small></>
-          )}
-        </button>
+        {isIntelligence ? (
+          <div className="grid gap-3">
+            {INTELLIGENCE_FILES.map(({ key, label, hint }) => (
+              <FileSlot key={key} label={label} hint={hint} file={intelFiles[key]} onSelect={(selected) => selectIntelFile(key, selected)} />
+            ))}
+          </div>
+        ) : (
+          <>
+          <button
+            className={`flex min-h-[210px] w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-[1.5px] border-dashed px-3.5 py-[22px] transition duration-200 sm:min-h-[230px] sm:p-7 ${dragging ? '-translate-y-0.5 border-[#1070BA] bg-[#eff8fe]' : 'border-[#afd2e9] bg-[#f7fbfe] hover:-translate-y-0.5 hover:border-[#1070BA] hover:bg-[#eff8fe]'}`}
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={handleDrop}
+          >
+            <span className="mb-[17px] grid h-[52px] w-[52px] place-items-center rounded-[14px] bg-white text-[#1070BA] shadow-[0_7px_20px_rgba(16,112,186,0.12)]" aria-hidden="true">
+              <Upload className="w-[25px]" strokeWidth={1.8} />
+            </span>
+            {file ? (
+              <><strong className="mb-[7px] max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[15px] text-[#1070BA]">{file.name}</strong><small className="mt-[18px] text-[10px] text-[#9aa9b6]">Click to choose a different file</small></>
+            ) : (
+              <><strong className="mb-[7px] text-[15px] text-[#102a43]">Drop your Excel or CSV file here</strong><span className="text-[13px] text-[#7c8e9e]">or <em className="font-bold not-italic text-[#1070BA]">browse files</em> from your device</span><small className="mt-[18px] text-[10px] text-[#9aa9b6]">Maximum file size: 10 MB</small></>
+            )}
+          </button>
 
-        <input ref={inputRef} className="sr-only" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => selectFile(event.target.files[0])} />
+          <input ref={inputRef} className="sr-only" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { selectFile(event.target.files[0]); event.target.value = '' }} />
+          </>
+        )}
 
         <label className="mt-[18px] flex cursor-pointer items-center gap-2.5 text-[13px] text-[#476072]">
           <input
@@ -168,10 +245,22 @@ const Hero = () => {
           Skip rows with invalid email addresses
         </label>
 
-        <button className="mt-[14px] flex h-[52px] w-full items-center justify-center gap-2.5 rounded-xl border-0 bg-[#1070BA] font-bold text-white shadow-[0_10px_22px_rgba(16,112,186,0.22)] transition hover:-translate-y-px hover:bg-[#0c609f] disabled:cursor-not-allowed disabled:bg-[#e9eff3] disabled:text-[#94a5b2] disabled:shadow-none disabled:hover:translate-y-0" type="button" disabled={!file || loading} onClick={handleContinue}>
-          {loading ? 'Reading file…' : 'Continue with file'}
+        <button className="mt-[14px] flex h-[52px] w-full items-center justify-center gap-2.5 rounded-xl border-0 bg-[#1070BA] font-bold text-white shadow-[0_10px_22px_rgba(16,112,186,0.22)] transition hover:-translate-y-px hover:bg-[#0c609f] disabled:cursor-not-allowed disabled:bg-[#e9eff3] disabled:text-[#94a5b2] disabled:shadow-none disabled:hover:translate-y-0" type="button" disabled={!ready || loading} onClick={handleContinue}>
+          {loading ? (isIntelligence ? `Saving files…${uploadProgress ? ` ${uploadProgress.done}/${uploadProgress.total}` : ''}` : 'Reading file…') : isIntelligence ? 'Continue with files' : 'Continue with file'}
           <ChevronRight className="w-[18px]" aria-hidden="true" />
         </button>
+
+        {isIntelligence && (
+          <button
+            className="mt-2.5 flex h-[48px] w-full items-center justify-center gap-2.5 rounded-xl border-[1.5px] border-[#1070BA] bg-white font-bold text-[#1070BA] transition hover:-translate-y-px hover:bg-[#eff8fe] disabled:cursor-not-allowed disabled:opacity-60"
+            type="button"
+            disabled={loading}
+            onClick={() => navigate('/intelligence')}
+          >
+            <Database className="w-[17px]" aria-hidden="true" />
+            Continue with already fetched
+          </button>
+        )}
       
         <p className="mt-[17px] flex items-center justify-center gap-[7px] text-[10px] text-[#8a9aa8]">
           <LockKeyhole className="w-[13px]" strokeWidth={1.7} aria-hidden="true" />
@@ -179,6 +268,8 @@ const Hero = () => {
         </p>
       </div>
     </section>
+    {mode === 'nbfc' && <NbfcFollowUp />}
+    </>
   )
 }
 

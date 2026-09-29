@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { Check, CheckCircle2, ChevronDown, RefreshCw, Send, UserRoundMinusIcon, XCircle } from 'lucide-react'
-import { generateEmailForRecord, sendEmail } from '../../config/api'
+import { generateEmailForRecord, logIntelligenceEmail, sendEmail } from '../../config/api'
 import { safeSetItem } from '../../config/storage'
 import Loader from '../Loader'
 
@@ -15,6 +15,24 @@ const parseGeneratedEmail = (text) => {
     return { subject: match[1].trim(), body: match[2].trim() }
   }
   return { subject: 'Regarding your project', body: trimmed }
+}
+
+// Marketing Intelligence sends are recorded in the database so "Last Email Sent" stays current.
+const recordIntelligenceSend = (project, { subject, body }, status, errorMessage = null) => {
+  if (project.mode !== 'intelligence') return
+  logIntelligenceEmail({
+    contactId: project.contactId,
+    valueId: project.valueId,
+    companyName: project.companyName,
+    directorName: project.directorName,
+    email: project.email,
+    facilityName: project.facilityName,
+    enquiryAmount: project.enquiryAmount,
+    subject,
+    body,
+    status,
+    errorMessage,
+  }).catch((err) => console.error(err))
 }
 
 const AutomationCard = ({ project, onToggle, onRegenerate }) => {
@@ -207,6 +225,7 @@ const Automation = () => {
       const { subject, body } = parseGeneratedEmail(project.generatedEmail)
       try {
         await sendEmail({ to: project.email, subject, text: body })
+        recordIntelligenceSend(project, { subject, body }, 'sent')
         const timestamp = new Date().toISOString()
         setProjects((prev) =>
           prev.map((p, idx) => (idx === index ? { ...p, sendStatus: 'sent', sendError: null } : p))
@@ -221,6 +240,7 @@ const Automation = () => {
         })
       } catch (err) {
         const message = err.message || 'Failed to send email.'
+        recordIntelligenceSend(project, { subject, body }, 'failed', message)
         const timestamp = new Date().toISOString()
         setProjects((prev) =>
           prev.map((p, idx) => (idx === index ? { ...p, sendStatus: 'failed', sendError: message } : p))

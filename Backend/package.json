@@ -4,6 +4,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "mongoose": "^9.7.4",
+    "mysql2": "^3.24.4",
     "nodemailer": "^9.0.3"
   },
   "name": "backend",
