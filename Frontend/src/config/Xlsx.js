@@ -265,8 +265,13 @@ export const extractNbfcFromFile = (file, { validateEmail = true } = {}) => {
 // ---------- NBFC follow-up (bulk send, fixed template) ----------
 
 const FOLLOW_UP_EMAIL_HEADER = /^e[-\s]?mail/i
+// "Company", "Company Name", "CompanyName" or just "Name".
+const FOLLOW_UP_COMPANY_HEADER = /^(company\s*(name)?|name)$/i
 
 export const NBFC_FOLLOW_UP_SUBJECT = 'Following up – Express Rupya Capital Advisors'
+
+export const buildNbfcFollowUpSubject = (companyName) =>
+  companyName ? `Following up – ${companyName}` : NBFC_FOLLOW_UP_SUBJECT
 
 export const buildNbfcFollowUpEmail = () =>
   `Dear Sir/Madam,\n\n` +
@@ -277,6 +282,22 @@ export const buildNbfcFollowUpEmail = () =>
   `Diya\n` +
   `Express Rupya Capital Advisors\n` +
   `+91 81693 45033 | www.expressrupya.com`
+
+// Full "Subject: ...\n\nbody" text, in the same shape the Automation review page parses.
+export const buildNbfcFollowUpText = (companyName) =>
+  `Subject: ${buildNbfcFollowUpSubject(companyName)}\n\n${buildNbfcFollowUpEmail()}`
+
+// Turns an uploaded follow-up row into a ready-to-review Automation card (no AI generation needed).
+export const toNbfcFollowUpResult = ({ email, companyName }) => ({
+  mode: 'nbfcFollowUp',
+  email,
+  companyName,
+  // Reused by the Automation card header and Status logs.
+  projectName: companyName,
+  directorName: '',
+  generatedEmail: buildNbfcFollowUpText(companyName),
+  generationError: null,
+})
 
 export const extractEmailsFromFile = (file, { validateEmail = true } = {}) => {
   return new Promise((resolve, reject) => {
@@ -293,17 +314,20 @@ export const extractEmailsFromFile = (file, { validateEmail = true } = {}) => {
           const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' })
           if (rows.length === 0) return
 
-          const emailHeader = Object.keys(rows[0]).find((h) => FOLLOW_UP_EMAIL_HEADER.test(h.trim()))
+          const headers = Object.keys(rows[0])
+          const emailHeader = headers.find((h) => FOLLOW_UP_EMAIL_HEADER.test(h.trim()))
           if (!emailHeader) return
           foundEmailColumn = true
+          const companyHeader = headers.find((h) => FOLLOW_UP_COMPANY_HEADER.test(h.trim()))
 
           rows.forEach((row) => {
+            const companyName = companyHeader ? String(row[companyHeader] ?? '').trim() : ''
             splitLines(row[emailHeader]).forEach((email) => {
               if (validateEmail && !EMAIL_PATTERN.test(email)) return
               const key = email.toLowerCase()
               if (seen.has(key)) return
               seen.add(key)
-              records.push({ email })
+              records.push({ email, companyName })
             })
           })
         })

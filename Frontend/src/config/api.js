@@ -1,4 +1,4 @@
-import { buildIntelligenceEmail, buildNbfcEmail } from './Xlsx'
+import { buildIntelligenceEmail, buildNbfcEmail, buildNbfcFollowUpText } from './Xlsx'
 import { API_BASE } from './env'
 
 export const generateEmailContent = async (prompt) => {
@@ -26,6 +26,8 @@ export const sendEmail = async ({ to, subject, text }) => {
 // Marketing prompts return the full email; NBFC and Marketing Intelligence prompts
 // return a single line that gets dropped into their fixed templates.
 export const generateEmailForRecord = async (record) => {
+  // Follow-ups use a fixed template, so "regenerate" just rebuilds it.
+  if (record.mode === 'nbfcFollowUp') return buildNbfcFollowUpText(record.companyName)
   const output = await generateEmailContent(record.prompt)
   if (record.mode === 'nbfc') return buildNbfcEmail(record, output)
   if (record.mode === 'intelligence') return buildIntelligenceEmail(record, output)
