@@ -34,17 +34,102 @@ const startOfTodayIST = () => {
   return new Date(now - (now % (24 * 60 * 60 * 1000)) - IST_OFFSET_MS)
 }
 
-// Logged server-side so every device sees the same daily count. A logging failure never fails the send.
-const logSend = (to, subject, status, errorMessage = null) =>
+const EMAIL_TYPES = ['marketing', 'nbfc', 'nbfcFollowUp', 'intelligence']
+
+// email_send_log gained columns for the Status history; add them once if this database predates them.
+const HISTORY_COLUMNS = {
+  email_type: 'VARCHAR(30) NULL',
+  company_name: 'VARCHAR(255) NULL',
+  director_name: 'VARCHAR(255) NULL',
+}
+const ensureHistoryColumns = async () => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'email_send_log'`
+    )
+    const existing = new Set(rows.map((row) => row.COLUMN_NAME))
+    for (const [name, definition] of Object.entries(HISTORY_COLUMNS)) {
+      if (!existing.has(name)) await pool.query(`ALTER TABLE email_send_log ADD COLUMN ${name} ${definition}`)
+    }
+  } catch (error) {
+    console.error('Failed to add email history columns:', error.sqlMessage || error.message)
+  }
+}
+ensureHistoryColumns()
+
+const clip = (value, length) => {
+  const text = String(value ?? '').trim()
+  return text ? text.slice(0, length) : null
+}
+
+// Logged server-side so every device sees the same daily count and history. A logging failure never fails the send.
+const logSend = (to, subject, status, errorMessage = null, meta = {}) =>
   pool
-    .query('INSERT INTO email_send_log (to_email, subject, status, error_message, created_at) VALUES (?, ?, ?, ?, ?)', [
-      to.slice(0, 255),
-      subject.slice(0, 500) || null,
-      status,
-      errorMessage ? String(errorMessage).slice(0, 500) : null,
-      new Date(),
-    ])
+    .query(
+      `INSERT INTO email_send_log
+         (to_email, subject, status, error_message, created_at, email_type, company_name, director_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        to.slice(0, 255),
+        subject.slice(0, 500) || null,
+        status,
+        errorMessage ? String(errorMessage).slice(0, 500) : null,
+        new Date(),
+        EMAIL_TYPES.includes(meta.type) ? meta.type : null,
+        clip(meta.companyName, 255),
+        clip(meta.directorName, 255),
+      ]
+    )
     .catch((error) => console.error('Failed to log email send:', error.sqlMessage || error.message))
+
+// Rows logged before the type/company columns existed: work both out from the subject line.
+const SUBJECT_TYPES = [
+  { pattern: /^Fund Raising For\s+(.+)$/i, type: 'nbfc' },
+  { pattern: /^Following up\s+[–-]\s+(.+)$/i, type: 'nbfcFollowUp' },
+  { pattern: /^Funding Requirement\s+[–-]\s+(.+)$/i, type: 'intelligence' },
+]
+const fromSubject = (subject) => {
+  for (const { pattern, type } of SUBJECT_TYPES) {
+    const match = String(subject ?? '').match(pattern)
+    if (match) return { type, companyName: match[1].trim() }
+  }
+  return { type: 'marketing', companyName: null }
+}
+
+// Every email the server has sent (or failed to send), newest first, for the Status page.
+app.get('/api/email-history', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT l.id, l.to_email, l.subject, l.status, l.error_message, l.created_at,
+              l.email_type, l.company_name, l.director_name,
+              (SELECT ie.director_name FROM intel_emails ie
+                WHERE ie.director_email = l.to_email AND ie.director_name IS NOT NULL
+                ORDER BY ie.id DESC LIMIT 1) AS intel_director_name
+       FROM email_send_log l
+       ORDER BY l.created_at DESC, l.id DESC`
+    )
+    res.json({
+      history: rows.map((row) => {
+        const guessed = fromSubject(row.subject)
+        return {
+          id: row.id,
+          email: row.to_email,
+          subject: row.subject,
+          status: row.status,
+          errorMessage: row.error_message,
+          sentAt: row.created_at,
+          type: row.email_type || guessed.type,
+          companyName: row.company_name || guessed.companyName,
+          directorName: row.director_name || row.intel_director_name || null,
+        }
+      }),
+    })
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: `Failed to load email history — ${error.sqlMessage || error.message}` })
+  }
+})
 
 app.get('/api/email-stats/today', async (req, res) => {
   try {
@@ -106,6 +191,7 @@ app.post('/api/send-email', async (req, res) => {
   const to = String(req.body?.to ?? '').trim()
   const subject = String(req.body?.subject ?? '').trim()
   const text = String(req.body?.text ?? '').trim()
+  const meta = req.body?.meta ?? {}
 
   if (!to || !text) {
     return res.status(400).json({ error: '"to" and "text" are required.' })
@@ -122,11 +208,11 @@ app.post('/api/send-email', async (req, res) => {
       subject: subject || 'Regarding your project',
       text,
     })
-    await logSend(to, subject, 'sent')
+    await logSend(to, subject, 'sent', null, meta)
     res.json({ success: true, messageId: info.messageId })
   } catch (error) {
     console.error(error)
-    await logSend(to, subject, 'failed', error.message)
+    await logSend(to, subject, 'failed', error.message, meta)
     res.status(500).json({ error: 'Failed to send email.' })
   }
 })

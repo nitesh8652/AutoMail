@@ -56,7 +56,7 @@ const toFirstNameTitleCase = (name) => {
 const buildPrompt = (data, directorName) => {
   const director = toFirstNameTitleCase(directorName) || 'Sir/Madam'
   return (
-    `Write a personalized outreach email from Express Rupya Capital Advisors to ${director}, a director at "${data.projectName}", ` +
+    `Write a personalized outreach email from Express Rupya to ${director}, a director at "${data.projectName}", ` +
     `offering construction and cash-flow financing support. Use simple, clear, professional business English — everyday words, no jargon or hard-to-read language. ` +
     `Write fresh, natural sentences in your own words for each part; do not reuse stock phrasing, and make it feel written specifically for this project rather than a template. ` +
     `Never mention sales figures, percent sold, units sold, or pricing — the recipient should not feel we are tracking their sales numbers. ` +
@@ -64,7 +64,7 @@ const buildPrompt = (data, directorName) => {
     `1. A short, catchy subject line in the exact format "Subject: <text>" as the very first line, referencing "${data.projectName}" or its progress, followed by a blank line.\n` +
     `2. Greeting to ${director} using only their first name (e.g. "Dear ${director},"), never their full name and never in all caps.\n` +
     `3. A catchy, attention-grabbing opening line about the project (by name) or its construction stage — something that makes the reader want to keep reading, not a generic "hope you're doing well."\n` +
-    `4. A short paragraph introducing Express Rupya Capital Advisors and how we help developers secure timely, flexible, large-scale financing.\n` +
+    `4. A short paragraph introducing Express Rupya (always call it just "Express Rupya" in the body, never "Express Rupya Capital Advisors") and how we help developers secure timely, flexible, large-scale financing.\n` +
     `5. A short paragraph on our track record: financing premium residential and commercial developments across India, working with private credit funds, AIFs, institutional investors, and international capital providers.\n` +
     `6. A bullet list (around 4 bullets) on how our financing helps: better cash flow and execution timelines, flexible non-bank funding structures, faster access to funds to avoid cost overruns, and support for current and upcoming projects.\n` +
     `7. A line offering to explore funding for their other ongoing or upcoming projects.\n` +
@@ -179,7 +179,7 @@ export const buildNbfcEmail = (record, description) => {
     `Subject: Fund Raising For ${company}\n\n` +
     `Dear ${greetingName},\n\n` +
     `We understand that ${cleaned}.\n\n` +
-    `At Express Rupya Capital Advisors, we assist businesses in raising structured debt through banks, NBFCs, AIFs, private credit funds and institutional lenders.\n\n` +
+    `At Express Rupya, we assist businesses in raising structured debt through banks, NBFCs, AIFs, private credit funds and institutional lenders.\n\n` +
     `We can support ${company} with funding solutions such as working capital, project finance, refinancing and structured debt solutions.\n\n` +
     `We would be happy to connect and understand your funding requirements.\n\n` +
     NBFC_SIGNATURE_BLOCK
@@ -370,9 +370,11 @@ const INTEL_VALUE_HEADER_PATTERNS = {
   city: /^city/i,
 }
 
-const INTEL_SIGNATURE_BLOCK = `Regards,
+const INTEL_SIGNATURE_BLOCK = `Best regards,
+Amit
 Express Rupya Capital Advisors
-+91 81693 45033 | www.expressrupya.com
++91 85914 58046
+www.expressrupya.com
 Your partner for growth !`
 
 const matchHeadersWith = (patterns, headers) => {
@@ -449,6 +451,19 @@ export const formatCompanyForEmail = (name) => {
   return toTitleCase(text)
 }
 
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// "Private Limited" / "Pvt. Ltd." / "(P) Ltd" at the end of a name.
+const PRIVATE_LIMITED = String.raw`[\s,.]*(?:\bprivate|\bpvt\.?|\(p\))\s*(?:limited|ltd\.?)\.?`
+const PRIVATE_LIMITED_SUFFIX = new RegExp(`${PRIVATE_LIMITED}$`, 'i')
+
+// Name as written in the email body, without the "Private Limited" suffix:
+// "ARFAT PETROCHEMICALS PRIVATE LIMITED" -> "Arfat Petrochemicals". The subject keeps the full name.
+export const companyNameForBody = (name) => {
+  const full = formatCompanyForEmail(name)
+  return full.replace(PRIVATE_LIMITED_SUFFIX, '').trim() || full
+}
+
 // "AKHIL  JAIN" -> "Akhil"; skips salutations and initials ("Mr. K. RAMESH" -> "Ramesh").
 export const firstNameForGreeting = (fullName) => {
   const parts = String(fullName ?? '').trim().split(/\s+/).filter(Boolean)
@@ -461,29 +476,102 @@ export const firstNameForGreeting = (fullName) => {
   return bare.charAt(0).toUpperCase() + bare.slice(1).toLowerCase()
 }
 
-const buildIntelligencePrompt = ({ companyName: rawCompanyName, facilityName, enquiryAmount }) => {
-  const companyName = formatCompanyForEmail(rawCompanyName)
-  return `Write one sentence for a corporate lending outreach email from Express Rupya Capital Advisors.\n\n` +
-  `Company: ${companyName}\nFacility: ${facilityName}\nEnquiry amount: ${enquiryAmount}\n\n` +
-  `The sentence must follow this shape: "We came across ${companyName}'s proposed <facility> funding requirement of approximately <amount>."\n` +
-  `- Write the facility in clear, natural business English (expand abbreviations, e.g. "TL" to "term loan", "CC" to "cash credit", "WC" to "working capital").\n` +
-  `- Keep the amount value exactly the same; only format it readably in Indian style (e.g. "INR 25 crore", "INR 50 lakh"). If the unit is unclear, keep it as given.\n` +
-  `- Keep the company name exactly as given.\n` +
-  `Return only that one sentence, with no quotes or extra commentary.`
+const CRORE = 10000000
+
+// Uploaded amounts are plain rupees ("50,000,000"); manually typed ones may say "5 Cr" or "50 lakh".
+export const parseEnquiryAmount = (value) => {
+  const text = String(value ?? '').toLowerCase().replace(/,/g, '')
+  const number = parseFloat(text.match(/\d+(\.\d+)?/)?.[0])
+  if (Number.isNaN(number)) return null
+  if (/\b(cr|crore|crores)\b/.test(text)) return number * CRORE
+  if (/\b(l|lac|lacs|lakh|lakhs)\b/.test(text)) return number * 100000
+  return number
+}
+
+// The email never states the sheet's amount; it offers a round band around it
+// (10 Cr -> 8–12, 14 -> 10–25, 24 -> 20–40, 399 -> 200–500), capped at 500 Cr.
+// Under 5 Cr (or unreadable) gets the general 5–50 Cr pitch.
+const FUNDING_BANDS = [
+  { below: 8, range: [5, 10] },
+  { below: 12, range: [8, 12] },
+  { below: 20, range: [10, 25] },
+  { below: 40, range: [20, 40] },
+  { below: 75, range: [40, 75] },
+  { below: 120, range: [75, 150] },
+  { below: 200, range: [100, 200] },
+  { below: 500, range: [200, 500] },
+]
+
+export const fundingRangeFor = (enquiryAmount) => {
+  const amount = parseEnquiryAmount(enquiryAmount)
+  if (amount === null || amount < 5 * CRORE) return '₹5–50 crore'
+  const crore = amount / CRORE
+  const band = FUNDING_BANDS.find((b) => crore < b.below)
+  if (!band) return crore === 500 ? '₹200–500 crore' : 'up to ₹500 crore'
+  return `₹${band.range[0]}–${band.range[1]} crore`
+}
+
+// ChatGPT sometimes writes "INR 25 crore" / "Rs. 25 crore" or "20-40" despite the prompt;
+// emails always use "₹20–40 crore".
+const toRupeeSymbol = (text) => text.replace(/\b(?:INR|Rs\.?)\s*(?=\d)/gi, '₹').replace(/(\d)\s*(?:-|–|to)\s*(?=\d)/g, '$1–')
+
+// The opening must not reveal we hold their data: the facility from the sheet is only a private
+// hint for ChatGPT about what the business may care about (growth, assets, cash flow), and is
+// never named; the amount is only ever shown as a round range.
+// 45 + the two fixed paragraphs (44) + closing question (6) keeps the email under 100 words.
+const OPENING_MAX_WORDS = 45
+
+// Generic words that may appear anyway; any other word of the sheet's facility name must not.
+const GENERIC_FACILITY_WORDS = new Set(['loan', 'loans', 'facility', 'facilities', 'finance', 'financing', 'funding', 'limit', 'limits', 'against', 'with', 'from', 'other', 'for', 'and', 'of', 'the'])
+
+const buildIntelligencePrompt = ({ companyName: rawCompanyName, facilityName, fundingRange }) => {
+  const companyName = companyNameForBody(rawCompanyName)
+  return `Write the opening paragraph of a corporate lending outreach email from Express Rupya to ${companyName}.\n\n` +
+  `PRIVATE CONTEXT — never repeat, name or paraphrase it closely: the company may be interested in "${facilityName}".\n` +
+  `Use it only to judge what this business likely cares about (e.g. expanding operations, buying assets or equipment, ` +
+  `managing cash flow, funding growth) and speak to that in broad business language.\n\n` +
+  `Rules:\n` +
+  `- Start with "Express Rupya helps companies like ${companyName}" (write the company name exactly like that, never add "Private Limited" or "Pvt Ltd") and mention that we arrange funding of "${fundingRange}" (keep that exactly, using the ₹ symbol, never "INR" or "Rs").\n` +
+  `- Do NOT name any loan product, asset type or facility (no "commercial vehicle loan", "cash credit", "working capital", "machinery loan", etc.).\n` +
+  `- Do NOT say or imply that we know of any requirement, enquiry, application, amount or data of theirs, and never use words like "approximately" or "proposed". It must read as a confident, general introduction that feels relevant to them.\n` +
+  `- 1–2 sentences, at most ${OPENING_MAX_WORDS - 5} words in total. Professional, warm, not salesy.\n` +
+  `Return only the paragraph, with no quotes or extra commentary.`
+}
+
+// True if the opening repeats a distinctive word of the sheet's facility ("vehicle", "machinery", "cc"...).
+const leaksFacility = (text, facilityName, companyName) => {
+  const words = text.toLowerCase().replace(companyName.toLowerCase(), ' ').split(/[^a-z0-9]+/)
+  return String(facilityName ?? '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .some((word) => word.length >= 2 && !GENERIC_FACILITY_WORDS.has(word) && words.some((w) => w === word || w === `${word}s` || word === `${w}s`))
 }
 
 export const buildIntelligenceEmail = (record, openingLine) => {
   const greetingName = firstNameForGreeting(record.directorName) || 'Sir/Madam'
   const companyName = formatCompanyForEmail(record.companyName) || record.companyName
-  const fallback = `We came across ${companyName}'s proposed ${record.facilityName} funding requirement of approximately ${record.enquiryAmount}`
-  const opening = String(openingLine ?? '').trim().replace(/^["']|["']$/g, '').replace(/\.+$/, '') || fallback
+  const bodyCompanyName = companyNameForBody(record.companyName) || companyName
+  const fundingRange = fundingRangeFor(record.enquiryAmount)
+  const fallback = `Express Rupya helps companies like ${bodyCompanyName} arrange funding of ${fundingRange} to support growth, expansion and day-to-day business needs, structured around how the business actually operates`
+  // ChatGPT may add the "Private Limited" back; strip it wherever the name appears.
+  const generated = toRupeeSymbol(String(openingLine ?? '').trim().replace(/^["']|["']$/g, '').replace(/\.+$/, ''))
+    .replace(new RegExp(`(${escapeRegExp(bodyCompanyName)})${PRIVATE_LIMITED}`, 'gi'), '$1')
+  // Fall back if ChatGPT runs long, changes the range, sounds like it knows their figures,
+  // or lets the sheet's facility slip through.
+  const usable =
+    generated &&
+    generated.split(/\s+/).length <= OPENING_MAX_WORDS &&
+    generated.includes(fundingRange.replace(/^up to /, '')) &&
+    !/\b(approximately|approx|proposed|enquiry|requirement of)\b/i.test(generated) &&
+    !leaksFacility(generated, record.facilityName, bodyCompanyName)
+  const opening = usable ? generated : fallback
 
   return (
     `Subject: Funding Requirement – ${companyName}\n\n` +
     `Dear ${greetingName},\n\n` +
-    `${opening}.\n` +
-    `We thought it may be worthwhile to connect, as we are regularly in discussion with banks, NBFCs and financial institutions on similar corporate funding requirements.\n\n` +
-    `If the requirement is still under consideration, we would be happy to understand the proposed end use, tenure and broad structure and explore whether there may be a suitable lending fit.\n\n` +
+    `${opening}.\n\n` +
+    `Through our regular engagement with banks, NBFCs and financial institutions, we match each requirement with the right lender on competitive terms.\n\n` +
+    `If you are evaluating any funding in the coming months, we would be happy to understand your requirement and suggest a suitable structure.\n\n` +
     `Would this be relevant to discuss?\n\n` +
     INTEL_SIGNATURE_BLOCK
   )
@@ -493,6 +581,7 @@ export const buildIntelligenceEmail = (record, openingLine) => {
 export const toIntelligenceRecord = (row) => {
   const record = {
     ...row,
+    fundingRange: fundingRangeFor(row.enquiryAmount),
     mode: 'intelligence',
     // Reused by the Automation card header and Status logs.
     projectName: row.companyName,

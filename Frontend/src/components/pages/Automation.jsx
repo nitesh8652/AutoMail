@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { Check, CheckCircle2, ChevronDown, RefreshCw, Send, UserRoundMinusIcon, XCircle } from 'lucide-react'
 import { generateEmailForRecord, logIntelligenceEmail, sendEmail } from '../../config/api'
-import { safeSetItem } from '../../config/storage'
 import Loader from '../Loader'
 
 const SEND_DELAY_MS = 3000
@@ -224,7 +223,16 @@ const Automation = () => {
       const { project, index } = targets[i]
       const { subject, body } = parseGeneratedEmail(project.generatedEmail)
       try {
-        await sendEmail({ to: project.email, subject, text: body })
+        await sendEmail({
+          to: project.email,
+          subject,
+          text: body,
+          meta: {
+            type: project.mode || 'marketing',
+            companyName: project.companyName || project.projectName,
+            directorName: project.directorName,
+          },
+        })
         recordIntelligenceSend(project, { subject, body }, 'sent')
         const timestamp = new Date().toISOString()
         setProjects((prev) =>
@@ -265,8 +273,7 @@ const Automation = () => {
 
     setDelayRemaining(0)
 
-    const existingLogs = JSON.parse(localStorage.getItem('emailStatusLogs') || '[]')
-    safeSetItem('emailStatusLogs', [...existingLogs, ...logs])
+    // The history itself is stored by the server on every send; this refreshes the footer's daily count.
     window.dispatchEvent(new Event('emailStatusLogsUpdated'))
 
     setSending(false)

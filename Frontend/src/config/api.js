@@ -12,15 +12,25 @@ export const generateEmailContent = async (prompt) => {
   return data.output
 }
 
-export const sendEmail = async ({ to, subject, text }) => {
+// `meta` ({ type, companyName, directorName }) is stored with the send for the Status history.
+export const sendEmail = async ({ to, subject, text, meta }) => {
   const response = await fetch(`${API_BASE}/api/send-email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to, subject, text }),
+    body: JSON.stringify({ to, subject, text, meta }),
   })
   const data = await response.json()
   if (!response.ok) throw new Error(data.error || 'Failed to send email.')
   return data
+}
+
+// The body calls the firm just "Express Rupya"; only the signature (from the
+// "Regards" sign-off down) keeps the full "Express Rupya Capital Advisors".
+const shortenFirmNameInBody = (text) => {
+  const signOff = text.search(/^(best\s+)?regards,?\s*$/im)
+  const body = signOff === -1 ? text : text.slice(0, signOff)
+  const rest = signOff === -1 ? '' : text.slice(signOff)
+  return body.replace(/Express Rupya Capital Advisors/gi, 'Express Rupya') + rest
 }
 
 // Marketing prompts return the full email; NBFC and Marketing Intelligence prompts
@@ -29,9 +39,11 @@ export const generateEmailForRecord = async (record) => {
   // Follow-ups use a fixed template, so "regenerate" just rebuilds it.
   if (record.mode === 'nbfcFollowUp') return buildNbfcFollowUpText(record.companyName)
   const output = await generateEmailContent(record.prompt)
-  if (record.mode === 'nbfc') return buildNbfcEmail(record, output)
-  if (record.mode === 'intelligence') return buildIntelligenceEmail(record, output)
-  return output
+  if (record.mode === 'nbfc') return shortenFirmNameInBody(buildNbfcEmail(record, output))
+  if (record.mode === 'intelligence') {
+    return shortenFirmNameInBody(buildIntelligenceEmail(record, output))
+  }
+  return shortenFirmNameInBody(output)
 }
 
 // ---------- Marketing Intelligence (MySQL-backed) ----------
@@ -100,6 +112,10 @@ export const logIntelligenceEmail = (entry) =>
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry) },
     'Failed to save the email log.'
   )
+
+// Every email the server has sent or failed to send (all modes), newest first.
+export const fetchEmailHistory = async () =>
+  (await requestJson('/api/email-history', undefined, 'Failed to load the email history.')).history
 
 // Shared across devices: counted by the server from every email it sends.
 export const fetchTodayEmailStats = () =>

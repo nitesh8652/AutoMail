@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, CheckCircle2, ChevronRight, Database, Filter, FileSpreadsheet, MailCheck, Plus, RefreshCw, Search, Trash2, Users } from 'lucide-react'
 import { clearIntelligenceData, fetchIntelligenceRecords, generateEmailForRecord } from '../../config/api'
-import { toIntelligenceRecord } from '../../config/Xlsx'
+import { parseEnquiryAmount, toIntelligenceRecord } from '../../config/Xlsx'
 import { LAST_SCAN_STORAGE_KEY, safeSetItem } from '../../config/storage'
 import TypewriterLoader from '../TypewriterLoader'
 import CreateDataModal from '../CreateDataModal'
@@ -13,16 +13,6 @@ const GENERATE_CONCURRENCY = 5
 
 const CRORE = 10000000
 const MIN_ENQUIRY_AMOUNT = 5 * CRORE
-
-// Uploaded amounts are plain rupees ("50,000,000"); manually typed ones may say "5 Cr" or "50 lakh".
-const parseEnquiryAmount = (value) => {
-  const text = String(value ?? '').toLowerCase().replace(/,/g, '')
-  const number = parseFloat(text.match(/\d+(\.\d+)?/)?.[0])
-  if (Number.isNaN(number)) return null
-  if (/\b(cr|crore|crores)\b/.test(text)) return number * CRORE
-  if (/\b(l|lac|lacs|lakh|lakhs)\b/.test(text)) return number * 100000
-  return number
-}
 
 // Indian-style amount for the table ("₹ 25.00 Cr", "₹ 50.00 L"); the raw value stays in the tooltip.
 const formatEnquiryAmount = (value) => {
@@ -198,7 +188,8 @@ const IntelligenceData = () => {
   const [clearError, setClearError] = useState(null)
   const [creating, setCreating] = useState(false)
   const [sentOnly, setSentOnly] = useState(false)
-  const [largeOnly, setLargeOnly] = useState(false)
+  // null, 'large' (> 5 Cr) or 'small' (< 5 Cr, sent the general under-5-Cr template).
+  const [amountFilter, setAmountFilter] = useState(null)
 
   const loadRecords = async () => {
     setLoading(true)
@@ -232,6 +223,12 @@ const IntelligenceData = () => {
   const sentCount = useMemo(() => rows.filter((row) => row.lastSentAt).length, [rows])
   const isLargeEnquiry = (row) => parseEnquiryAmount(row.enquiryAmount) > MIN_ENQUIRY_AMOUNT
   const largeCount = useMemo(() => rows.filter(isLargeEnquiry).length, [rows])
+  const isSmallEnquiry = (row) => {
+    const amount = parseEnquiryAmount(row.enquiryAmount)
+    return amount !== null && amount < MIN_ENQUIRY_AMOUNT
+  }
+  const smallCount = useMemo(() => rows.filter(isSmallEnquiry).length, [rows])
+  const toggleAmountFilter = (value) => setAmountFilter((prev) => (prev === value ? null : value))
 
   const filteredRows = useMemo(() => {
     const companyTerm = companySearch.trim().toLowerCase()
@@ -240,12 +237,15 @@ const IntelligenceData = () => {
     return rows.filter(
       (row) =>
         (!sentOnly || row.lastSentAt) &&
-        (!largeOnly || isLargeEnquiry(row)) &&
+        (amountFilter !== 'large' || isLargeEnquiry(row)) &&
+        (amountFilter !== 'small' || isSmallEnquiry(row)) &&
         (!companyTerm || row.companyName.toLowerCase().includes(companyTerm)) &&
         (!nameTerm || row.directorName.toLowerCase().includes(nameTerm)) &&
         (!emailTerm || row.email.toLowerCase().includes(emailTerm))
     )
-  }, [rows, companySearch, nameSearch, emailSearch, sentOnly, largeOnly])
+  }, [rows, companySearch, nameSearch, emailSearch, sentOnly, amountFilter])
+
+  const amountLabel = { large: 'above 5 Cr', small: 'under 5 Cr' }[amountFilter]
 
   const searchSummary = [companySearch.trim(), nameSearch.trim(), emailSearch.trim()].filter(Boolean).join('" and "')
 
@@ -433,17 +433,32 @@ const IntelligenceData = () => {
         </button>
         <button
           type="button"
-          onClick={() => setLargeOnly((prev) => !prev)}
-          aria-pressed={largeOnly}
+          onClick={() => toggleAmountFilter('large')}
+          aria-pressed={amountFilter === 'large'}
           disabled={loading || rows.length === 0}
           className={`flex h-10 items-center gap-2 rounded-lg border px-4 text-[13px] font-bold transition disabled:opacity-50 ${
-            largeOnly
+            amountFilter === 'large'
               ? 'border-violet-500 bg-violet-500 text-white hover:bg-violet-600'
               : 'border-violet-200 bg-white text-violet-700 hover:bg-violet-50'
           }`}
         >
           <Filter className="h-4 w-4" aria-hidden="true" />
           Enquiry &gt; 5 Cr ({largeCount})
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleAmountFilter('small')}
+          aria-pressed={amountFilter === 'small'}
+          disabled={loading || rows.length === 0}
+          title="Directors with an enquiry under 5 Cr — emailed with the general 5–50 Cr funding template"
+          className={`flex h-10 items-center gap-2 rounded-lg border px-4 text-[13px] font-bold transition disabled:opacity-50 ${
+            amountFilter === 'small'
+              ? 'border-amber-500 bg-amber-500 text-white hover:bg-amber-600'
+              : 'border-amber-200 bg-white text-amber-700 hover:bg-amber-50'
+          }`}
+        >
+          <Filter className="h-4 w-4" aria-hidden="true" />
+          Enquiry &lt; 5 Cr ({smallCount})
         </button>
         <button
           type="button"
@@ -643,12 +658,12 @@ const IntelligenceData = () => {
                     <tr>
                       <td colSpan={8} className="px-4 py-16 text-center text-[#7c8e9e]">
                         {searchSummary
-                          ? `No ${sentOnly ? 'emailed ' : ''}directors${largeOnly ? ' with enquiry above 5 Cr' : ''} match "${searchSummary}".`
-                          : sentOnly && largeOnly
-                            ? 'No emailed directors have an enquiry above 5 Cr.'
+                          ? `No ${sentOnly ? 'emailed ' : ''}directors${amountLabel ? ` with enquiry ${amountLabel}` : ''} match "${searchSummary}".`
+                          : sentOnly && amountLabel
+                            ? `No emailed directors have an enquiry ${amountLabel}.`
                             : sentOnly
                               ? 'No emails have been sent to any director yet.'
-                              : 'No directors have an enquiry above 5 Cr.'}
+                              : `No directors have an enquiry ${amountLabel}.`}
                       </td>
                     </tr>
                   ) : (
