@@ -197,7 +197,8 @@ const matchNbfcHeaders = (headers) => {
   return map
 }
 
-export const extractNbfcFromFile = (file, { validateEmail = true } = {}) => {
+// NBFC and Housing Finance sheets share the same "Company Name" + "Email" layout.
+const extractCompanyEmailsFromFile = (file, { validateEmail = true } = {}, toRecord) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
 
@@ -227,16 +228,7 @@ export const extractNbfcFromFile = (file, { validateEmail = true } = {}) => {
 
             emails.forEach((email, index) => {
               if (validateEmail && !EMAIL_PATTERN.test(email)) return
-              records.push({
-                mode: 'nbfc',
-                email,
-                companyName,
-                contactName: contactNames[index] ?? '',
-                // Reused by the Automation card header and Status logs.
-                projectName: companyName,
-                directorName: contactNames[index] ?? '',
-                prompt: buildNbfcPrompt(companyName),
-              })
+              records.push(toRecord({ email, companyName, contactName: contactNames[index] ?? '' }))
             })
           })
         })
@@ -261,6 +253,59 @@ export const extractNbfcFromFile = (file, { validateEmail = true } = {}) => {
     reader.readAsArrayBuffer(file)
   })
 }
+
+export const extractNbfcFromFile = (file, options) =>
+  extractCompanyEmailsFromFile(file, options, ({ email, companyName, contactName }) => ({
+    mode: 'nbfc',
+    email,
+    companyName,
+    contactName,
+    // Reused by the Automation card header and Status logs.
+    projectName: companyName,
+    directorName: contactName,
+    prompt: buildNbfcPrompt(companyName),
+  }))
+
+// ---------- Housing Finance (fixed template) ----------
+
+export const buildHousingFinanceSubject = (companyName) => `Fund Raising- ${companyName}`
+
+export const buildHousingFinanceText = (companyName) =>
+  `Subject: ${buildHousingFinanceSubject(companyName)}
+
+` +
+  `Dear Sir/Madam,
+
+` +
+  `Greetings from Express Rupya Capital Advisors.
+
+` +
+  `At Express Rupya, we assist HFCs and NBFCs in raising capital through banks, NBFCs, AIFs, private credit funds and institutional investors.
+
+` +
+  `We would be pleased to support ${companyName} with term loans, NCDs, securitisation/PTC, direct assignment, co-lending and subordinated debt.
+
+` +
+  `Would be great to connect at your convenience for a brief call to explore how we can assist.
+
+` +
+  `Warm regards,
+` +
+  `Tanu
+` +
+  `Express Rupya Capital Advisors
+` +
+  `+91 7021628079 | www.expressrupya.com`
+
+export const extractHousingFromFile = (file, options) =>
+  extractCompanyEmailsFromFile(file, options, ({ email, companyName }) => ({
+    mode: 'housing',
+    email,
+    companyName,
+    // Reused by the Automation card header and Status logs.
+    projectName: companyName,
+    directorName: '',
+  }))
 
 // ---------- NBFC follow-up (bulk send, fixed template) ----------
 

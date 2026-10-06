@@ -36,7 +36,8 @@ const FetchedData = () => {
   const [projects, setProjects] = useState([])
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState(null)
-  const isNbfc = projects[0]?.mode === 'nbfc'
+  // NBFC and Housing Finance sheets are just company name + email.
+  const isNbfc = ['nbfc', 'housing'].includes(projects[0]?.mode)
   const columns = isNbfc ? NBFC_COLUMNS : COLUMNS
 
   useEffect(() => {

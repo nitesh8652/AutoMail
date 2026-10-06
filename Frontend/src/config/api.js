@@ -1,4 +1,4 @@
-import { buildIntelligenceEmail, buildNbfcEmail, buildNbfcFollowUpText } from './Xlsx'
+import { buildHousingFinanceText, buildIntelligenceEmail, buildNbfcEmail, buildNbfcFollowUpText } from './Xlsx'
 import { API_BASE } from './env'
 
 export const generateEmailContent = async (prompt) => {
@@ -38,6 +38,8 @@ const shortenFirmNameInBody = (text) => {
 export const generateEmailForRecord = async (record) => {
   // Follow-ups use a fixed template, so "regenerate" just rebuilds it.
   if (record.mode === 'nbfcFollowUp') return buildNbfcFollowUpText(record.companyName)
+  // Housing Finance uses a fixed template; the company name goes in exactly as written in the sheet.
+  if (record.mode === 'housing') return buildHousingFinanceText(record.companyName)
   const output = await generateEmailContent(record.prompt)
   if (record.mode === 'nbfc') return shortenFirmNameInBody(buildNbfcEmail(record, output))
   if (record.mode === 'intelligence') {
@@ -116,6 +118,9 @@ export const logIntelligenceEmail = (entry) =>
 // Every email the server has sent or failed to send (all modes), newest first.
 export const fetchEmailHistory = async () =>
   (await requestJson('/api/email-history', undefined, 'Failed to load the email history.')).history
+
+export const clearEmailHistory = () =>
+  requestJson('/api/email-history', { method: 'DELETE' }, 'Failed to clear the email history.')
 
 // Shared across devices: counted by the server from every email it sends.
 export const fetchTodayEmailStats = () =>

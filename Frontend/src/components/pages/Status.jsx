@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle, XCircle, Send, Download, Clock, RefreshCw, Search } from 'lucide-react'
+import { AlertTriangle, CheckCircle, XCircle, Send, Download, Clock, RefreshCw, Search, Trash2 } from 'lucide-react'
 import * as XLSX from 'xlsx'
-import { fetchEmailHistory } from '../../config/api'
+import { clearEmailHistory, fetchEmailHistory } from '../../config/api'
 import MiLoader from '../MiLoader'
 
 const TYPE_LABELS = {
   intelligence: 'Intelligence',
   nbfc: 'NBFC',
   nbfcFollowUp: 'NBFC follow-up',
+  housing: 'Housing Finance',
   marketing: 'Marketing',
 }
 
@@ -15,6 +16,7 @@ const TYPE_STYLES = {
   intelligence: 'bg-violet-100 text-violet-700',
   nbfc: 'bg-sky-100 text-sky-700',
   nbfcFollowUp: 'bg-amber-100 text-amber-700',
+  housing: 'bg-emerald-100 text-emerald-700',
   marketing: 'bg-slate-100 text-slate-600',
 }
 
@@ -88,6 +90,9 @@ const Status = () => {
   const [loadError, setLoadError] = useState(null)
   const [typeFilter, setTypeFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [confirmClear, setConfirmClear] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const [clearError, setClearError] = useState(null)
 
   const loadHistory = async () => {
     setLoading(true)
@@ -104,6 +109,20 @@ const Status = () => {
   useEffect(() => {
     loadHistory()
   }, [])
+
+  const handleClear = async () => {
+    setClearing(true)
+    setClearError(null)
+    try {
+      await clearEmailHistory()
+      setHistory([])
+      setConfirmClear(false)
+    } catch (err) {
+      setClearError(err.message || 'Failed to clear the email history.')
+    } finally {
+      setClearing(false)
+    }
+  }
 
   const typeCounts = useMemo(() => {
     const counts = {}
@@ -152,6 +171,39 @@ const Status = () => {
 
   return (
     <section className="relative z-10 mx-auto w-[calc(100%-2rem)] max-w-[800px] py-[45px] sm:w-[calc(100%-3rem)] sm:py-[55px] lg:py-[72px]">
+      {confirmClear && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="mx-4 flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl bg-white p-8 text-center shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="clear-logs-title">
+            <span className="grid h-14 w-14 place-items-center rounded-full bg-red-50 text-red-500">
+              <Trash2 className="h-7 w-7" strokeWidth={1.8} />
+            </span>
+            <h2 id="clear-logs-title" className="text-lg font-extrabold text-slate-800">Clear all logs?</h2>
+            <p className="text-sm text-slate-500">
+              This permanently deletes all {history.length} email log{history.length === 1 ? '' : 's'} and resets today&apos;s sent count. Download the Excel first if you need a copy.
+            </p>
+            {clearError && <p className="text-sm font-semibold text-red-600">{clearError}</p>}
+            <div className="mt-2 flex w-full gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmClear(false)}
+                disabled={clearing}
+                className="flex-1 rounded-xl border border-[#d3e4f0] bg-white py-2.5 text-sm font-bold text-[#476072] transition hover:bg-[#f7fbfe] disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleClear}
+                disabled={clearing}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 disabled:opacity-60"
+              >
+                {clearing ? <RefreshCw className="h-4 w-4 animate-spin" strokeWidth={2} /> : <Trash2 className="h-4 w-4" strokeWidth={2} />}
+                {clearing ? 'Clearing…' : 'Clear logs'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <span className="mb-[5px] block text-[10px] font-extrabold tracking-[0.13em] text-[#1070BA]">STATUS</span>
@@ -185,6 +237,19 @@ const Status = () => {
             >
               <Download className="h-4 w-4" strokeWidth={2} />
               Download Excel
+            </button>
+          )}
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setClearError(null)
+                setConfirmClear(true)
+              }}
+              className="flex shrink-0 items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-[13px] font-bold text-red-600 shadow-sm transition hover:-translate-y-px hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4" strokeWidth={2} />
+              Clear logs
             </button>
           )}
         </div>

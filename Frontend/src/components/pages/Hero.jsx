@@ -1,17 +1,12 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, ChevronRight, Database, LockKeyhole, Upload } from 'lucide-react'
-import { extractNbfcFromFile, extractProjectsFromFile, readIntelligenceFiles } from '../../config/Xlsx'
+import { extractHousingFromFile, extractNbfcFromFile, extractProjectsFromFile, readIntelligenceFiles } from '../../config/Xlsx'
 import { uploadIntelligenceData } from '../../config/api'
 import { LAST_SCAN_STORAGE_KEY, safeSetItem } from '../../config/storage'
+import { MODES, useMode } from '../../config/mode'
 import NbfcFollowUp from '../NbfcFollowUp'
 import { MiLoaderOverlay } from '../MiLoader'
-
-const MODES = [
-  { key: 'marketing', label: 'Marketing' },
-  { key: 'nbfc', label: 'NBFC' },
-  { key: 'intelligence', label: 'Intelligence' },
-]
 
 const INTELLIGENCE_FILES = [
   { key: 'contacts', label: 'Email file', hint: 'Company Name, Director Name, Director Email' },
@@ -47,17 +42,6 @@ const FileSlot = ({ label, hint, file, onSelect }) => {
   )
 }
 
-const MODE_STORAGE_KEY = 'emailMode'
-
-const loadSavedMode = () => {
-  try {
-    const saved = JSON.parse(localStorage.getItem(MODE_STORAGE_KEY))
-    return MODES.some(({ key }) => key === saved) ? saved : 'marketing'
-  } catch {
-    return 'marketing'
-  }
-}
-
 const Hero = () => {
   const inputRef = useRef(null)
   const navigate = useNavigate()
@@ -67,17 +51,11 @@ const Hero = () => {
   const [uploadProgress, setUploadProgress] = useState(null)
   const [error, setError] = useState(null)
   const [validateEmail, setValidateEmail] = useState(true)
-  const [mode, setMode] = useState(loadSavedMode)
+  const { mode } = useMode()
   const [intelFiles, setIntelFiles] = useState({ contacts: null, values: null })
   const isIntelligence = mode === 'intelligence'
+  const { label: modeLabel, Icon: ModeIcon } = MODES.find(({ key }) => key === mode)
   const ready = isIntelligence ? Boolean(intelFiles.contacts && intelFiles.values) : Boolean(file)
-
-  const selectMode = (nextMode) => {
-    setMode(nextMode)
-    safeSetItem(MODE_STORAGE_KEY, nextMode)
-  }
-
-
 
   const selectFile = (selectedFile) => {
     if (!selectedFile) return
@@ -108,7 +86,7 @@ const Hero = () => {
         navigate('/intelligence')
         return
       }
-      const extract = mode === 'nbfc' ? extractNbfcFromFile : extractProjectsFromFile
+      const extract = { nbfc: extractNbfcFromFile, housing: extractHousingFromFile }[mode] ?? extractProjectsFromFile
       const projects = await extract(file, { validateEmail })
       console.log(projects)
       safeSetItem('fetchedProjects', projects)
@@ -177,29 +155,12 @@ const Hero = () => {
       </div>
 
       <div className="relative mx-auto w-full max-w-[540px] rounded-[18px] border border-[#e3edf4] bg-white/95 p-[22px] shadow-[0_24px_70px_rgba(22,65,96,0.12)] before:absolute before:-inset-[14px] before:-z-10 before:rounded-[30px] before:border before:border-[#1070BA]/10 sm:rounded-[22px] sm:p-8" id="upload">
-        <div className="relative mb-6 grid grid-cols-3 rounded-xl bg-[#edf7fd] p-1" role="tablist" aria-label="Email type">
-          <span
-            className="absolute inset-y-1 left-1 w-[calc((100%-8px)/3)] rounded-lg bg-[#1070BA] shadow-[0_6px_16px_rgba(16,112,186,0.25)] transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-            style={{ transform: `translateX(${MODES.findIndex(({ key }) => key === mode) * 100}%)` }}
-            aria-hidden="true"
-          />
-          {MODES.map(({ key, label }) => (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={mode === key}
-              onClick={() => selectMode(key)}
-              className={`relative z-10 h-10 rounded-lg text-[13px] font-extrabold tracking-[0.04em] transition-colors duration-300 ${mode === key ? 'text-white' : 'text-[#1070BA] hover:text-[#0c609f]'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
         <div className="mb-6 flex items-start justify-between">
           <div>
-            <span className="mb-[5px] block text-[10px] font-extrabold tracking-[0.13em] text-[#1070BA]">STEP 01</span>
+            <span className="mb-[5px] flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.13em] text-[#1070BA]">
+              <ModeIcon className="w-3.5" strokeWidth={2} aria-hidden="true" />
+              STEP 01 · {modeLabel}
+            </span>
             <h2 className="font-heading text-[22px] font-bold tracking-[-0.02em] text-[#102a43]">{isIntelligence ? 'Upload your files' : 'Upload your file'}</h2>
           </div>
           <span className="rounded-md bg-[#edf7fd] px-[9px] py-1.5 text-[10px] font-extrabold tracking-[0.08em] text-[#1070BA]">.XLSX / .CSV</span>

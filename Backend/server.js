@@ -34,7 +34,7 @@ const startOfTodayIST = () => {
   return new Date(now - (now % (24 * 60 * 60 * 1000)) - IST_OFFSET_MS)
 }
 
-const EMAIL_TYPES = ['marketing', 'nbfc', 'nbfcFollowUp', 'intelligence']
+const EMAIL_TYPES = ['marketing', 'nbfc', 'nbfcFollowUp', 'intelligence', 'housing']
 
 // email_send_log gained columns for the Status history; add them once if this database predates them.
 const HISTORY_COLUMNS = {
@@ -87,6 +87,7 @@ const logSend = (to, subject, status, errorMessage = null, meta = {}) =>
 const SUBJECT_TYPES = [
   { pattern: /^Fund Raising For\s+(.+)$/i, type: 'nbfc' },
   { pattern: /^Following up\s+[–-]\s+(.+)$/i, type: 'nbfcFollowUp' },
+  { pattern: /^Fund Raising-\s*(.+)$/i, type: 'housing' },
   { pattern: /^Funding Requirement\s+[–-]\s+(.+)$/i, type: 'intelligence' },
 ]
 const fromSubject = (subject) => {
@@ -128,6 +129,17 @@ app.get('/api/email-history', async (req, res) => {
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: `Failed to load email history — ${error.sqlMessage || error.message}` })
+  }
+})
+
+// Wipes every row from the Status history (this also resets today's sent count).
+app.delete('/api/email-history', async (req, res) => {
+  try {
+    const [result] = await pool.query('DELETE FROM email_send_log')
+    res.json({ deleted: result.affectedRows })
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: `Failed to clear the email history — ${error.sqlMessage || error.message}` })
   }
 })
 
