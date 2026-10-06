@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
-import { Check, CheckCircle2, ChevronDown, RefreshCw, Send, UserRoundMinusIcon, XCircle } from 'lucide-react'
+import { Check, CheckCircle2, ChevronDown, MailPlus, RefreshCw, Reply, Send, SkipForward, TriangleAlert, UserRoundMinusIcon, XCircle } from 'lucide-react'
 import { generateEmailForRecord, logIntelligenceEmail, sendEmail } from '../../config/api'
 import Loader from '../Loader'
 
@@ -34,6 +34,68 @@ const recordIntelligenceSend = (project, { subject, body }, status, errorMessage
   }).catch((err) => console.error(err))
 }
 
+// Follow-ups with no earlier email to reply to wait for "Send as new" or "Skip".
+const needsThreadChoice = (project) => Boolean(project.threadMissing) && !project.threadChoice
+
+const formatSentDate = (value) => {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+const ThreadInfo = ({ project, onToggle }) => {
+  if (project.thread) {
+    const sentDate = formatSentDate(project.thread.sentAt)
+    return (
+      <div className="col-span-6 flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+        <Reply className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden="true" />
+        <span className="min-w-0 truncate">
+          Reply to: <strong>{project.thread.subject || '(no subject)'}</strong>
+          {sentDate && ` · ${sentDate}`}
+        </span>
+      </div>
+    )
+  }
+  if (!project.threadMissing) return null
+
+  const choice = project.threadChoice
+  return (
+    <div className="col-span-6 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+      <TriangleAlert className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden="true" />
+      <span className="min-w-0 flex-1">
+        {choice === 'new'
+          ? 'No earlier email found — will be sent as a new email.'
+          : choice === 'skip'
+            ? 'No earlier email found — skipped.'
+            : 'No earlier email found to this address. Send as a new email?'}
+      </span>
+      <div className="flex shrink-0 gap-1.5">
+        <button
+          type="button"
+          onClick={() => onToggle(true)}
+          className={`flex items-center gap-1 rounded-md border px-2.5 py-1 font-bold transition ${
+            choice === 'new' ? 'border-green-500 bg-green-500 text-white' : 'border-amber-300 bg-white hover:bg-green-50'
+          }`}
+        >
+          <MailPlus className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+          Send as new
+        </button>
+        <button
+          type="button"
+          onClick={() => onToggle(false)}
+          className={`flex items-center gap-1 rounded-md border px-2.5 py-1 font-bold transition ${
+            choice === 'skip' ? 'border-red-500 bg-red-500 text-white' : 'border-amber-300 bg-white hover:bg-red-50'
+          }`}
+        >
+          <SkipForward className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+          Skip
+        </button>
+      </div>
+    </div>
+  )
+}
+
 const AutomationCard = ({ project, onToggle, onRegenerate }) => {
   const selected = project.selected !== false
   const displayText = project.generationError
@@ -57,6 +119,8 @@ const AutomationCard = ({ project, onToggle, onRegenerate }) => {
             <RefreshCw className={`h-4 w-4 ${project.regenerating ? 'animate-spin' : ''}`} />
           </button>
         </div>
+
+        <ThreadInfo project={project} onToggle={onToggle} />
 
         <textarea
           readOnly
@@ -172,7 +236,13 @@ const Automation = () => {
   }, [location.state])
 
   const handleToggle = (index, selected) => {
-    setProjects((prev) => prev.map((project, i) => (i === index ? { ...project, selected } : project)))
+    setProjects((prev) =>
+      prev.map((project, i) =>
+        i === index
+          ? { ...project, selected, ...(project.threadMissing ? { threadChoice: selected ? 'new' : 'skip' } : {}) }
+          : project
+      )
+    )
   }
 
   const handleRegenerate = async (index) => {
@@ -199,12 +269,14 @@ const Automation = () => {
     }
   }
 
+  const pendingChoices = projects.filter(needsThreadChoice).length
+
   const handleSendAll = async () => {
     const targets = projects
       .map((project, index) => ({ project, index }))
       .filter(({ project }) => project.selected !== false && project.generatedEmail && !project.generationError)
 
-    if (targets.length === 0 || sending) return
+    if (targets.length === 0 || sending || pendingChoices > 0) return
 
     setSending(true)
     setSentCount(0)
@@ -227,6 +299,11 @@ const Automation = () => {
           to: project.email,
           subject,
           text: body,
+          // Follow-ups reply in the thread of the last email sent to this address.
+          ...(project.thread && {
+            inReplyTo: project.thread.messageId,
+            references: [...(project.thread.references || []), project.thread.messageId],
+          }),
           meta: {
             type: project.mode || 'marketing',
             companyName: project.companyName || project.projectName,
@@ -392,13 +469,18 @@ const Automation = () => {
       <div className="mt-6 flex flex-col items-center justify-center gap-2">
         <button
           type="button"
-          disabled={sending}
+          disabled={sending || pendingChoices > 0}
           onClick={handleSendAll}
           className="flex h-[52px] items-center justify-center rounded-xl bg-[#1070BA] px-10 font-bold text-white shadow-[0_10px_22px_rgba(16,112,186,0.22)] transition hover:-translate-y-px hover:bg-[#0c609f] disabled:cursor-not-allowed disabled:bg-[#e9eff3] disabled:text-[#94a5b2] disabled:shadow-none disabled:hover:translate-y-0"
         >
           {sending ? 'Sending…' : 'Send to all'}
           <Send className="ml-2 h-5 w-5" />
         </button>
+        {pendingChoices > 0 && (
+          <p className="text-xs font-semibold text-amber-700">
+            {pendingChoices} email{pendingChoices === 1 ? '' : 's'} with no earlier email need a choice: Send as new or Skip.
+          </p>
+        )}
       </div>
     </div>
   )

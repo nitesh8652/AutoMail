@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, ChevronRight, Upload } from 'lucide-react'
 import { extractEmailsFromFile, toNbfcFollowUpResult } from '../config/Xlsx'
+import { fetchFollowUpThreads } from '../config/api'
 import { safeSetItem } from '../config/storage'
 
 const NbfcFollowUp = () => {
@@ -36,7 +37,12 @@ const NbfcFollowUp = () => {
         setError('No valid email addresses found in the uploaded file.')
         return
       }
-      const results = records.map(toNbfcFollowUpResult)
+      // Each follow-up replies to the last email sent to that address, so it lands in the same thread.
+      const threads = await fetchFollowUpThreads(records.map(({ email }) => email))
+      const results = records.map((record) => {
+        const thread = threads[record.email.trim().toLowerCase()]
+        return toNbfcFollowUpResult(record, thread?.found ? thread : null)
+      })
       safeSetItem('automationResults', results)
       navigate('/automation', { state: { results } })
     } catch (err) {
@@ -102,7 +108,7 @@ const NbfcFollowUp = () => {
           disabled={!file || loading}
           onClick={handleReview}
         >
-          {loading ? 'Reading file…' : 'Review emails'}
+          {loading ? 'Finding earlier emails…' : 'Review emails'}
           <ChevronRight className="w-[18px]" aria-hidden="true" />
         </button>
       </div>

@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 const intelRoutes = require('./routes/intel');
+const { findLastSentTo } = require('./followupThreads');
 const pool = require('./db');
 const { PORT } = require('./config');
 
@@ -199,11 +200,41 @@ app.post('/api/generate-email', async (req, res) => {
   }
 })
 
+const MAX_FOLLOW_UP_LOOKUPS = 500
+
+// Finds the last email sent to each address in Gmail's Sent folder, for threading NBFC follow-ups.
+app.post('/api/followup/threads', async (req, res) => {
+  const emails = [
+    ...new Set(
+      (Array.isArray(req.body?.emails) ? req.body.emails : [])
+        .map((email) => String(email ?? '').trim().toLowerCase())
+        .filter(Boolean)
+    ),
+  ]
+  if (emails.length === 0) return res.status(400).json({ error: '"emails" is required.' })
+  if (emails.length > MAX_FOLLOW_UP_LOOKUPS) {
+    return res.status(400).json({ error: `Too many addresses — upload at most ${MAX_FOLLOW_UP_LOOKUPS} at a time.` })
+  }
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    return res.status(500).json({ error: 'EMAIL_USER/EMAIL_PASS are not configured on the server.' })
+  }
+
+  try {
+    res.json({ threads: await findLastSentTo(emails) })
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: error.message || 'Failed to look up earlier emails.' })
+  }
+})
+
 app.post('/api/send-email', async (req, res) => {
   const to = String(req.body?.to ?? '').trim()
   const subject = String(req.body?.subject ?? '').trim()
   const text = String(req.body?.text ?? '').trim()
   const meta = req.body?.meta ?? {}
+  // Set for follow-ups so they land as a reply in the original Gmail thread.
+  const inReplyTo = String(req.body?.inReplyTo ?? '').trim() || undefined
+  const references = Array.isArray(req.body?.references) ? req.body.references.map(String).filter(Boolean) : undefined
 
   if (!to || !text) {
     return res.status(400).json({ error: '"to" and "text" are required.' })
@@ -219,6 +250,8 @@ app.post('/api/send-email', async (req, res) => {
       to,
       subject: subject || 'Regarding your project',
       text,
+      inReplyTo,
+      references,
     })
     await logSend(to, subject, 'sent', null, meta)
     res.json({ success: true, messageId: info.messageId })

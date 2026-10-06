@@ -328,19 +328,31 @@ export const buildNbfcFollowUpEmail = () =>
   `Express Rupya Capital Advisors\n` +
   `+91 81693 45033 | www.expressrupya.com`
 
+// "Re: Re: Fwd: Fund Raising For X" -> "Re: Fund Raising For X", so Gmail keeps it in the same thread.
+const toReplySubject = (subject) => {
+  const base = String(subject ?? '').replace(/^\s*((re|fwd?)\s*:\s*)+/i, '').trim()
+  return base ? `Re: ${base}` : ''
+}
+
 // Full "Subject: ...\n\nbody" text, in the same shape the Automation review page parses.
-export const buildNbfcFollowUpText = (companyName) =>
-  `Subject: ${buildNbfcFollowUpSubject(companyName)}\n\n${buildNbfcFollowUpEmail()}`
+// With a thread (the last email sent to this address), it goes out as a reply to it.
+export const buildNbfcFollowUpText = (companyName, thread = null) =>
+  `Subject: ${(thread && toReplySubject(thread.subject)) || buildNbfcFollowUpSubject(companyName)}\n\n${buildNbfcFollowUpEmail()}`
 
 // Turns an uploaded follow-up row into a ready-to-review Automation card (no AI generation needed).
-export const toNbfcFollowUpResult = ({ email, companyName }) => ({
+// `thread` comes from the Gmail Sent folder lookup; when nothing was found the user picks
+// "Send as new" or "Skip" on the card before sending.
+export const toNbfcFollowUpResult = ({ email, companyName }, thread = null) => ({
   mode: 'nbfcFollowUp',
   email,
   companyName,
   // Reused by the Automation card header and Status logs.
   projectName: companyName,
   directorName: '',
-  generatedEmail: buildNbfcFollowUpText(companyName),
+  thread,
+  threadMissing: !thread,
+  ...(thread ? {} : { selected: false }),
+  generatedEmail: buildNbfcFollowUpText(companyName, thread),
   generationError: null,
 })
 

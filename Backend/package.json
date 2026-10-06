@@ -3,6 +3,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "imapflow": "^2.2.5",
     "mongoose": "^9.7.4",
     "mysql2": "^3.24.4",
     "nodemailer": "^9.0.3"

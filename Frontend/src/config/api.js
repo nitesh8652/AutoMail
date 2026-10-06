@@ -13,11 +13,11 @@ export const generateEmailContent = async (prompt) => {
 }
 
 // `meta` ({ type, companyName, directorName }) is stored with the send for the Status history.
-export const sendEmail = async ({ to, subject, text, meta }) => {
+export const sendEmail = async ({ to, subject, text, meta, inReplyTo, references }) => {
   const response = await fetch(`${API_BASE}/api/send-email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to, subject, text, meta }),
+    body: JSON.stringify({ to, subject, text, meta, inReplyTo, references }),
   })
   const data = await response.json()
   if (!response.ok) throw new Error(data.error || 'Failed to send email.')
@@ -37,7 +37,7 @@ const shortenFirmNameInBody = (text) => {
 // return a single line that gets dropped into their fixed templates.
 export const generateEmailForRecord = async (record) => {
   // Follow-ups use a fixed template, so "regenerate" just rebuilds it.
-  if (record.mode === 'nbfcFollowUp') return buildNbfcFollowUpText(record.companyName)
+  if (record.mode === 'nbfcFollowUp') return buildNbfcFollowUpText(record.companyName, record.thread)
   // Housing Finance uses a fixed template; the company name goes in exactly as written in the sheet.
   if (record.mode === 'housing') return buildHousingFinanceText(record.companyName)
   const output = await generateEmailContent(record.prompt)
@@ -118,6 +118,16 @@ export const logIntelligenceEmail = (entry) =>
 // Every email the server has sent or failed to send (all modes), newest first.
 export const fetchEmailHistory = async () =>
   (await requestJson('/api/email-history', undefined, 'Failed to load the email history.')).history
+
+// Last email sent to each address (looked up in Gmail's Sent folder), keyed by lowercased email.
+export const fetchFollowUpThreads = async (emails) => {
+  const { threads } = await requestJson(
+    '/api/followup/threads',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emails }) },
+    'Failed to look up earlier emails in Gmail.'
+  )
+  return threads
+}
 
 export const clearEmailHistory = () =>
   requestJson('/api/email-history', { method: 'DELETE' }, 'Failed to clear the email history.')
