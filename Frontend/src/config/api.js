@@ -37,7 +37,7 @@ const shortenFirmNameInBody = (text) => {
 // return a single line that gets dropped into their fixed templates.
 export const generateEmailForRecord = async (record) => {
   // Follow-ups use a fixed template, so "regenerate" just rebuilds it.
-  if (record.mode === 'nbfcFollowUp') return buildNbfcFollowUpText(record.companyName, record.thread)
+  if (record.mode === 'nbfcFollowUp') return buildNbfcFollowUpText(record.companyName, record.thread, record.senderName)
   // Housing Finance uses a fixed template; the company name goes in exactly as written in the sheet.
   if (record.mode === 'housing') return buildHousingFinanceText(record.companyName)
   const output = await generateEmailContent(record.prompt)

@@ -1,13 +1,31 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, ChevronRight, Upload } from 'lucide-react'
-import { extractEmailsFromFile, toNbfcFollowUpResult } from '../config/Xlsx'
+import {
+  DEFAULT_FOLLOW_UP_SENDER,
+  NBFC_FOLLOW_UP_SENDERS,
+  extractEmailsFromFile,
+  toNbfcFollowUpResult,
+} from '../config/Xlsx'
 import { fetchFollowUpThreads } from '../config/api'
 import { safeSetItem } from '../config/storage'
+
+const SENDER_STORAGE_KEY = 'nbfcFollowUpSender'
+
+// Remembers who signed last on this browser, so each team member picks their name once.
+const readSavedSender = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SENDER_STORAGE_KEY))
+    return NBFC_FOLLOW_UP_SENDERS.includes(saved) ? saved : DEFAULT_FOLLOW_UP_SENDER
+  } catch {
+    return DEFAULT_FOLLOW_UP_SENDER
+  }
+}
 
 const NbfcFollowUp = () => {
   const inputRef = useRef(null)
   const navigate = useNavigate()
+  const [senderName, setSenderName] = useState(readSavedSender)
   const [file, setFile] = useState(null)
   const [dragging, setDragging] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -41,7 +59,7 @@ const NbfcFollowUp = () => {
       const threads = await fetchFollowUpThreads(records.map(({ email }) => email))
       const results = records.map((record) => {
         const thread = threads[record.email.trim().toLowerCase()]
-        return toNbfcFollowUpResult(record, thread?.found ? thread : null)
+        return toNbfcFollowUpResult(record, thread?.found ? thread : null, senderName)
       })
       safeSetItem('automationResults', results)
       navigate('/automation', { state: { results } })
@@ -80,6 +98,30 @@ const NbfcFollowUp = () => {
             <p className="mt-1 text-[13px] text-[#7c8e9e]">Upload a sheet with <strong>Company Name</strong> and <strong>Email</strong> columns. You can review every email before sending. The company name goes in the subject.</p>
           </div>
           <span className="rounded-md bg-[#edf7fd] px-[9px] py-1.5 text-[10px] font-extrabold tracking-[0.08em] text-[#1070BA]">.XLSX / .CSV</span>
+        </div>
+
+        <div className="mb-5">
+          <span className="mb-2 block text-[11px] font-extrabold tracking-[0.08em] text-[#7c8e9e]">SIGN OFF AS</span>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Sign off as">
+            {NBFC_FOLLOW_UP_SENDERS.map((name) => {
+              const active = name === senderName
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => {
+                    setSenderName(name)
+                    safeSetItem(SENDER_STORAGE_KEY, name)
+                  }}
+                  className={`rounded-xl border px-4 py-2 text-[13px] font-bold transition ${active ? 'border-[#1070BA] bg-[#1070BA] text-white shadow-[0_6px_16px_rgba(16,112,186,0.22)]' : 'border-[#d6e6f1] bg-white text-[#3d5468] hover:border-[#1070BA] hover:text-[#1070BA]'}`}
+                >
+                  {name}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         <button

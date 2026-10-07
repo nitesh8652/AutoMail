@@ -318,13 +318,17 @@ export const NBFC_FOLLOW_UP_SUBJECT = 'Following up – Express Rupya Capital Ad
 export const buildNbfcFollowUpSubject = (companyName) =>
   companyName ? `Following up – ${companyName}` : NBFC_FOLLOW_UP_SUBJECT
 
-export const buildNbfcFollowUpEmail = () =>
+// Team members who can sign a follow-up; the chosen name goes in the sign-off.
+export const NBFC_FOLLOW_UP_SENDERS = ['Bhoomi', 'Surbhi', 'Tanu', 'Diya']
+export const DEFAULT_FOLLOW_UP_SENDER = 'Diya'
+
+export const buildNbfcFollowUpEmail = (senderName = DEFAULT_FOLLOW_UP_SENDER) =>
   `Dear Sir/Madam,\n\n` +
   `Hope you are doing well.\n\n` +
   `Kindly advise us how we can proceed further.\n\n` +
   `Would be great to connect at your convenience to explore how we can assist. Please let us know a suitable time for a quick discussion.\n\n` +
   `Best Regards,\n` +
-  `Diya\n` +
+  `${senderName || DEFAULT_FOLLOW_UP_SENDER}\n` +
   `Express Rupya Capital Advisors\n` +
   `+91 81693 45033 | www.expressrupya.com`
 
@@ -336,23 +340,25 @@ const toReplySubject = (subject) => {
 
 // Full "Subject: ...\n\nbody" text, in the same shape the Automation review page parses.
 // With a thread (the last email sent to this address), it goes out as a reply to it.
-export const buildNbfcFollowUpText = (companyName, thread = null) =>
-  `Subject: ${(thread && toReplySubject(thread.subject)) || buildNbfcFollowUpSubject(companyName)}\n\n${buildNbfcFollowUpEmail()}`
+export const buildNbfcFollowUpText = (companyName, thread = null, senderName = DEFAULT_FOLLOW_UP_SENDER) =>
+  `Subject: ${(thread && toReplySubject(thread.subject)) || buildNbfcFollowUpSubject(companyName)}\n\n${buildNbfcFollowUpEmail(senderName)}`
 
 // Turns an uploaded follow-up row into a ready-to-review Automation card (no AI generation needed).
 // `thread` comes from the Gmail Sent folder lookup; when nothing was found the user picks
 // "Send as new" or "Skip" on the card before sending.
-export const toNbfcFollowUpResult = ({ email, companyName }, thread = null) => ({
+export const toNbfcFollowUpResult = ({ email, companyName }, thread = null, senderName = DEFAULT_FOLLOW_UP_SENDER) => ({
   mode: 'nbfcFollowUp',
   email,
   companyName,
   // Reused by the Automation card header and Status logs.
   projectName: companyName,
   directorName: '',
+  // Kept on the record so "regenerate" signs with the same name.
+  senderName,
   thread,
   threadMissing: !thread,
   ...(thread ? {} : { selected: false }),
-  generatedEmail: buildNbfcFollowUpText(companyName, thread),
+  generatedEmail: buildNbfcFollowUpText(companyName, thread, senderName),
   generationError: null,
 })
 
