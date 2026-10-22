@@ -230,6 +230,7 @@ const Hero = () => {
       </div>
     </section>
     {mode === 'nbfc' && <NbfcFollowUp />}
+    {isIntelligence && <NbfcFollowUp variant="intelligence" />}
     </>
   )
 }

@@ -35,7 +35,7 @@ const startOfTodayIST = () => {
   return new Date(now - (now % (24 * 60 * 60 * 1000)) - IST_OFFSET_MS)
 }
 
-const EMAIL_TYPES = ['marketing', 'nbfc', 'nbfcFollowUp', 'intelligence', 'housing']
+const EMAIL_TYPES = ['marketing', 'nbfc', 'nbfcFollowUp', 'intelligence', 'intelligenceFollowUp', 'housing']
 
 // email_send_log gained columns for the Status history; add them once if this database predates them.
 const HISTORY_COLUMNS = {

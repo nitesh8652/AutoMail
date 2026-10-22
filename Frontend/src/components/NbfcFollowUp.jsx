@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router'
 import { AlertTriangle, ChevronRight, Upload } from 'lucide-react'
 import {
   DEFAULT_FOLLOW_UP_SENDER,
+  INTELLIGENCE_FOLLOW_UP_SENDER,
   NBFC_FOLLOW_UP_SENDERS,
   extractEmailsFromFile,
+  toIntelligenceFollowUpResult,
   toNbfcFollowUpResult,
 } from '../config/Xlsx'
 import { fetchFollowUpThreads } from '../config/api'
@@ -22,7 +24,14 @@ const readSavedSender = () => {
   }
 }
 
-const NbfcFollowUp = () => {
+// Intelligence follow-ups always go out signed by Amit, so there is no sender picker.
+const VARIANTS = {
+  nbfc: { tag: 'NBFC FOLLOW-UP', toResult: toNbfcFollowUpResult },
+  intelligence: { tag: 'INTELLIGENCE FOLLOW-UP', fixedSender: INTELLIGENCE_FOLLOW_UP_SENDER, toResult: toIntelligenceFollowUpResult },
+}
+
+const NbfcFollowUp = ({ variant = 'nbfc' }) => {
+  const { tag, fixedSender, toResult } = VARIANTS[variant]
   const inputRef = useRef(null)
   const navigate = useNavigate()
   const [senderName, setSenderName] = useState(readSavedSender)
@@ -59,7 +68,7 @@ const NbfcFollowUp = () => {
       const threads = await fetchFollowUpThreads(records.map(({ email }) => email))
       const results = records.map((record) => {
         const thread = threads[record.email.trim().toLowerCase()]
-        return toNbfcFollowUpResult(record, thread?.found ? thread : null, senderName)
+        return toResult(record, thread?.found ? thread : null, senderName)
       })
       safeSetItem('automationResults', results)
       navigate('/automation', { state: { results } })
@@ -93,7 +102,7 @@ const NbfcFollowUp = () => {
       <div className="rounded-[18px] border border-[#e3edf4] bg-white/95 p-[22px] shadow-[0_24px_70px_rgba(22,65,96,0.12)] sm:rounded-[22px] sm:p-8">
         <div className="mb-6 flex items-start justify-between">
           <div>
-            <span className="mb-[5px] block text-[10px] font-extrabold tracking-[0.13em] text-[#1070BA]">NBFC FOLLOW-UP</span>
+            <span className="mb-[5px] block text-[10px] font-extrabold tracking-[0.13em] text-[#1070BA]">{tag}</span>
             <h2 className="font-heading text-[22px] font-bold tracking-[-0.02em] text-[#102a43]">Follow-up emails</h2>
             <p className="mt-1 text-[13px] text-[#7c8e9e]">Upload a sheet with <strong>Company Name</strong> and <strong>Email</strong> columns. You can review every email before sending. The company name goes in the subject.</p>
           </div>
@@ -102,26 +111,32 @@ const NbfcFollowUp = () => {
 
         <div className="mb-5">
           <span className="mb-2 block text-[11px] font-extrabold tracking-[0.08em] text-[#7c8e9e]">SIGN OFF AS</span>
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Sign off as">
-            {NBFC_FOLLOW_UP_SENDERS.map((name) => {
-              const active = name === senderName
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => {
-                    setSenderName(name)
-                    safeSetItem(SENDER_STORAGE_KEY, name)
-                  }}
-                  className={`rounded-xl border px-4 py-2 text-[13px] font-bold transition ${active ? 'border-[#1070BA] bg-[#1070BA] text-white shadow-[0_6px_16px_rgba(16,112,186,0.22)]' : 'border-[#d6e6f1] bg-white text-[#3d5468] hover:border-[#1070BA] hover:text-[#1070BA]'}`}
-                >
-                  {name}
-                </button>
-              )
-            })}
-          </div>
+          {fixedSender ? (
+            <span className="inline-block rounded-xl border border-[#1070BA] bg-[#1070BA] px-4 py-2 text-[13px] font-bold text-white shadow-[0_6px_16px_rgba(16,112,186,0.22)]">
+              {fixedSender}
+            </span>
+          ) : (
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Sign off as">
+              {NBFC_FOLLOW_UP_SENDERS.map((name) => {
+                const active = name === senderName
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => {
+                      setSenderName(name)
+                      safeSetItem(SENDER_STORAGE_KEY, name)
+                    }}
+                    className={`rounded-xl border px-4 py-2 text-[13px] font-bold transition ${active ? 'border-[#1070BA] bg-[#1070BA] text-white shadow-[0_6px_16px_rgba(16,112,186,0.22)]' : 'border-[#d6e6f1] bg-white text-[#3d5468] hover:border-[#1070BA] hover:text-[#1070BA]'}`}
+                  >
+                    {name}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         <button

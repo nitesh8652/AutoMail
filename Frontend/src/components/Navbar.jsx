@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router'
 import { Activity, Check, ChevronDown, House, Menu, Send, Table2, X } from 'lucide-react'
 import { MODES, useMode } from '../config/mode'
@@ -10,45 +10,92 @@ const navLinks = [
   { to: '/status', label: 'Status', Icon: Activity },
 ]
 
-const ModeOptions = ({ mode, onSelect }) => (
-  <ul className="flex flex-col gap-1" role="menu" aria-label="Switch workspace">
-    {MODES.map((option) => {
-      const { key, label, hint } = option
-      const active = mode === key
-      return (
-        <li key={key}>
-          <button
-            type="button"
-            role="menuitemradio"
-            aria-checked={active}
-            onClick={() => onSelect(key)}
-            className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
-              active ? 'bg-[#eaf5fc]' : 'hover:bg-[#f7fbfe]'
-            }`}
-          >
-            <span
-              className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${
-                active ? 'bg-[#1070BA] text-white' : 'bg-[#edf7fd] text-[#1070BA]'
-              }`}
-            >
-              <option.Icon className="w-[18px]" strokeWidth={1.8} aria-hidden="true" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className={`block text-sm font-bold ${active ? 'text-[#1070BA]' : 'text-[#102a43]'}`}>{label}</span>
-              <span className="block truncate text-xs text-[#7c8e9e]">{hint}</span>
-            </span>
-            {active && <Check className="w-4 shrink-0 text-[#1070BA]" strokeWidth={2.2} aria-hidden="true" />}
-          </button>
-        </li>
-      )
-    })}
-  </ul>
-)
+// Blobs merged by the goo filter: the lead snaps over with overshoot, the others lag behind
+// so the highlight stretches between options like a drop of liquid.
+const LIQUID_BLOBS = [
+  { className: 'inset-x-0 rounded-xl', duration: '420ms', ease: 'cubic-bezier(0.34, 1.56, 0.64, 1)' },
+  { className: 'inset-x-6 rounded-xl', duration: '600ms', ease: 'cubic-bezier(0.65, 0, 0.35, 1)' },
+  { className: 'left-[30px] w-4 rounded-full', duration: '760ms', ease: 'cubic-bezier(0.65, 0, 0.35, 1)', drop: true },
+]
+
+const LIQUID_SWITCH_MS = 560
+
+const ModeOptions = ({ mode, onSelect }) => {
+  const itemRefs = useRef({})
+  const [blob, setBlob] = useState(null)
+
+  useLayoutEffect(() => {
+    const item = itemRefs.current[mode]
+    if (!item) return
+    setBlob((prev) => ({ top: item.offsetTop, height: item.offsetHeight, ready: prev !== null }))
+  }, [mode])
+
+  return (
+    <div className="relative">
+      <svg className="absolute h-0 w-0" aria-hidden="true">
+        <filter id="mode-goo">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur" />
+          <feColorMatrix in="blur" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -9" />
+        </filter>
+      </svg>
+      {blob && (
+        <div className="pointer-events-none absolute inset-0" style={{ filter: 'url(#mode-goo)' }} aria-hidden="true">
+          {LIQUID_BLOBS.map(({ className, duration, ease, drop }) => (
+            <div
+              key={className}
+              className={`liquid-blob ${className} ${blob.ready ? 'liquid-blob--ready' : ''}`}
+              style={{
+                top: drop ? blob.top + blob.height / 2 - 8 : blob.top,
+                height: drop ? 16 : blob.height,
+                '--liquid-duration': duration,
+                '--liquid-ease': ease,
+              }}
+            />
+          ))}
+        </div>
+      )}
+      <ul className="relative flex flex-col gap-1" role="menu" aria-label="Switch workspace">
+        {MODES.map((option) => {
+          const { key, label, hint } = option
+          const active = mode === key
+          return (
+            <li key={key} ref={(node) => { itemRefs.current[key] = node }}>
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={active}
+                onClick={() => onSelect(key)}
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
+                  active ? '' : 'hover:bg-[#f7fbfe]'
+                }`}
+              >
+                <span
+                  className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg transition-colors duration-300 ${
+                    active ? 'bg-[#1070BA] text-white' : 'bg-[#edf7fd] text-[#1070BA]'
+                  }`}
+                >
+                  <option.Icon className="w-[18px]" strokeWidth={1.8} aria-hidden="true" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className={`block text-sm font-bold ${active ? 'text-[#1070BA]' : 'text-[#102a43]'}`}>{label}</span>
+                  <span className="block truncate text-xs text-[#7c8e9e]">{hint}</span>
+                </span>
+                {active && <Check className="w-4 shrink-0 text-[#1070BA]" strokeWidth={2.2} aria-hidden="true" />}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
 
 const Navbar = () => {
   const [open, setOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [pendingMode, setPendingMode] = useState(null)
   const profileRef = useRef(null)
+  const switchTimer = useRef(null)
   const navigate = useNavigate()
   const { mode, setMode } = useMode()
   const { Icon: ModeIcon, label: modeLabel } = MODES.find(({ key }) => key === mode)
@@ -66,12 +113,24 @@ const Navbar = () => {
     }
   }, [profileOpen])
 
+  useEffect(() => () => clearTimeout(switchTimer.current), [])
+
   const selectMode = (nextMode) => {
-    setMode(nextMode)
-    setProfileOpen(false)
-    setOpen(false)
-    // Each workspace starts from its own upload screen.
-    navigate('/')
+    if (pendingMode) return
+    if (nextMode === mode) {
+      setProfileOpen(false)
+      return
+    }
+    // Let the liquid highlight flow to the new option before swapping the workspace.
+    setPendingMode(nextMode)
+    switchTimer.current = setTimeout(() => {
+      setMode(nextMode)
+      setPendingMode(null)
+      setProfileOpen(false)
+      setOpen(false)
+      // Each workspace starts from its own upload screen.
+      navigate('/')
+    }, LIQUID_SWITCH_MS)
   }
 
   const linkStyles = ({ isActive }) =>
@@ -138,11 +197,11 @@ const Navbar = () => {
             </button>
 
             {profileOpen && (
-              <div className="absolute right-0 top-[calc(100%+10px)] w-[280px] rounded-2xl border border-[#e3edf4] bg-white p-2 shadow-[0_24px_60px_rgba(22,65,96,0.16)]">
+              <div className="liquid-drop-in absolute right-0 top-[calc(100%+10px)] w-[280px] rounded-2xl border border-[#e3edf4] bg-white p-2 shadow-[0_24px_60px_rgba(22,65,96,0.16)]">
                 <p className="px-3 pb-2 pt-1.5 text-[10px] font-extrabold uppercase tracking-[0.13em] text-[#8394a5]">
                   Switch workspace
                 </p>
-                <ModeOptions mode={mode} onSelect={selectMode} />
+                <ModeOptions mode={pendingMode ?? mode} onSelect={selectMode} />
               </div>
             )}
           </div>

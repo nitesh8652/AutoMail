@@ -8,6 +8,7 @@ const TYPE_LABELS = {
   intelligence: 'Intelligence',
   nbfc: 'NBFC',
   nbfcFollowUp: 'NBFC follow-up',
+  intelligenceFollowUp: 'Intelligence follow-up',
   housing: 'Housing Finance',
   marketing: 'Marketing',
 }
@@ -16,6 +17,7 @@ const TYPE_STYLES = {
   intelligence: 'bg-violet-100 text-violet-700',
   nbfc: 'bg-sky-100 text-sky-700',
   nbfcFollowUp: 'bg-amber-100 text-amber-700',
+  intelligenceFollowUp: 'bg-fuchsia-100 text-fuchsia-700',
   housing: 'bg-emerald-100 text-emerald-700',
   marketing: 'bg-slate-100 text-slate-600',
 }
@@ -88,7 +90,7 @@ const Status = () => {
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
-  const [typeFilter, setTypeFilter] = useState('all')
+  const [typeFilter, setTypeFilter]  = useState('all')
   const [search, setSearch] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
   const [clearing, setClearing] = useState(false)

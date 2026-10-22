@@ -1,4 +1,10 @@
-import { buildHousingFinanceText, buildIntelligenceEmail, buildNbfcEmail, buildNbfcFollowUpText } from './Xlsx'
+import {
+  buildHousingFinanceText,
+  buildIntelligenceEmail,
+  buildIntelligenceFollowUpText,
+  buildNbfcEmail,
+  buildNbfcFollowUpText,
+} from './Xlsx'
 import { API_BASE } from './env'
 
 export const generateEmailContent = async (prompt) => {
@@ -38,6 +44,7 @@ const shortenFirmNameInBody = (text) => {
 export const generateEmailForRecord = async (record) => {
   // Follow-ups use a fixed template, so "regenerate" just rebuilds it.
   if (record.mode === 'nbfcFollowUp') return buildNbfcFollowUpText(record.companyName, record.thread, record.senderName)
+  if (record.mode === 'intelligenceFollowUp') return buildIntelligenceFollowUpText(record.companyName, record.thread)
   // Housing Finance uses a fixed template; the company name goes in exactly as written in the sheet.
   if (record.mode === 'housing') return buildHousingFinanceText(record.companyName)
   const output = await generateEmailContent(record.prompt)

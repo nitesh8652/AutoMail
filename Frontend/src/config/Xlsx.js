@@ -362,6 +362,32 @@ export const toNbfcFollowUpResult = ({ email, companyName }, thread = null, send
   generationError: null,
 })
 
+// ---------- Intelligence follow-up (same flow as NBFC, always signed by Amit) ----------
+
+export const INTELLIGENCE_FOLLOW_UP_SENDER = 'Amit'
+
+export const buildIntelligenceFollowUpEmail = (companyName) =>
+  `Dear Sir/Madam,\n\n` +
+  `Greetings!\n\n` +
+  `Just following up on my earlier email regarding potential financing solutions for ${companyName || 'your company'}.\n\n` +
+  `We can assist in arranging working capital facilities, term loans for capacity expansion, machinery financing, and refinancing of existing borrowings through our network of banks, NBFCs, and financial institutions.\n\n` +
+  `Kindly let us know if you are evaluating any such funding requirements where we could explore competitive financing options.\n\n` +
+  `Best regards,\n` +
+  `${INTELLIGENCE_FOLLOW_UP_SENDER}\n` +
+  `Express Rupya Capital Advisors\n` +
+  `+91 85914 58046\n` +
+  `www.expressrupya.com\n` +
+  `Your Partner for Growth!`
+
+export const buildIntelligenceFollowUpText = (companyName, thread = null) =>
+  `Subject: ${(thread && toReplySubject(thread.subject)) || buildNbfcFollowUpSubject(companyName)}\n\n${buildIntelligenceFollowUpEmail(companyName)}`
+
+export const toIntelligenceFollowUpResult = (record, thread = null) => ({
+  ...toNbfcFollowUpResult(record, thread, INTELLIGENCE_FOLLOW_UP_SENDER),
+  mode: 'intelligenceFollowUp',
+  generatedEmail: buildIntelligenceFollowUpText(record.companyName, thread),
+})
+
 export const extractEmailsFromFile = (file, { validateEmail = true } = {}) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()

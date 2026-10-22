@@ -11,3 +11,23 @@
   body { margin: 0; min-width: 320px; min-height: 100vh; }
   button { font: inherit; }
 }
+
+/* Workspace switcher: menu drips out of the trigger, highlight flows between options. */
+@keyframes liquid-drop-in {
+  0% { opacity: 0; transform: translateY(-14px) scale(0.6, 0.35); border-radius: 50%; }
+  45% { opacity: 1; }
+  100% { transform: none; border-radius: 16px; }
+}
+
+.liquid-drop-in {
+  transform-origin: calc(100% - 40px) top;
+  animation: liquid-drop-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.liquid-blob { position: absolute; background: #dcedf9; }
+.liquid-blob--ready { transition: top var(--liquid-duration) var(--liquid-ease), height var(--liquid-duration) var(--liquid-ease); }
+
+@media (prefers-reduced-motion: reduce) {
+  .liquid-drop-in { animation: none; }
+  .liquid-blob--ready { transition: none; }
+}
