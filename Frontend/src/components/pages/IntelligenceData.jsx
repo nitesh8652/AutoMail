@@ -197,7 +197,7 @@ const IntelligenceData = () => {
     try {
       const { records, stats: nextStats } = await fetchIntelligenceRecords()
       setStats(nextStats)
-      setRows(records.map((record, index) => ({ ...record, srNo: index + 1 })))
+      setRows(records)
       setSelected(new Set())
     } catch (err) {
       setLoadError(err.message || 'Failed to load saved data.')
@@ -210,16 +210,6 @@ const IntelligenceData = () => {
     loadRecords()
   }, [])
 
-  const directorsByCompany = useMemo(() => {
-    const map = new Map()
-    rows.forEach((row) => {
-      const ids = map.get(row.companyName) || []
-      ids.push(row.contactId)
-      map.set(row.companyName, ids)
-    })
-    return map
-  }, [rows])
-
   const sentCount = useMemo(() => rows.filter((row) => row.lastSentAt).length, [rows])
   const isLargeEnquiry = (row) => parseEnquiryAmount(row.enquiryAmount) > MIN_ENQUIRY_AMOUNT
   const largeCount = useMemo(() => rows.filter(isLargeEnquiry).length, [rows])
@@ -228,7 +218,16 @@ const IntelligenceData = () => {
     return amount !== null && amount < MIN_ENQUIRY_AMOUNT
   }
   const smallCount = useMemo(() => rows.filter(isSmallEnquiry).length, [rows])
-  const toggleAmountFilter = (value) => setAmountFilter((prev) => (prev === value ? null : value))
+  // Switching the enquiry filter drops selections from the other bucket, so the > 5 Cr and
+  // < 5 Cr templates never go out in the same batch.
+  const toggleAmountFilter = (value) => {
+    const next = amountFilter === value ? null : value
+    setAmountFilter(next)
+    if (!next) return
+    const matches = next === 'large' ? isLargeEnquiry : isSmallEnquiry
+    const allowed = new Set(rows.filter(matches).map((row) => row.contactId))
+    setSelected((prev) => new Set([...prev].filter((id) => allowed.has(id))))
+  }
 
   const filteredRows = useMemo(() => {
     const companyTerm = companySearch.trim().toLowerCase()
@@ -244,6 +243,16 @@ const IntelligenceData = () => {
         (!emailTerm || row.email.toLowerCase().includes(emailTerm))
     )
   }, [rows, companySearch, nameSearch, emailSearch, sentOnly, amountFilter])
+
+  const directorsByCompany = useMemo(() => {
+    const map = new Map()
+    filteredRows.forEach((row) => {
+      const ids = map.get(row.companyName) || []
+      ids.push(row.contactId)
+      map.set(row.companyName, ids)
+    })
+    return map
+  }, [filteredRows])
 
   const amountLabel = { large: 'above 5 Cr', small: 'under 5 Cr' }[amountFilter]
 
@@ -281,12 +290,13 @@ const IntelligenceData = () => {
   const applyRange = () => {
     const from = Number(rangeFrom)
     const to = Number(rangeTo)
-    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from || from > rows.length) {
-      setRangeError(`Enter a valid range between 1 and ${rows.length}.`)
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from || from > filteredRows.length) {
+      setRangeError(`Enter a valid range between 1 and ${filteredRows.length}.`)
       return
     }
     setRangeError(null)
-    setSelected(new Set(rows.filter((row) => row.srNo >= from && row.srNo <= to).map((row) => row.contactId)))
+    // Sr No counts the rows currently shown, so a range never picks rows hidden by a filter.
+    setSelected(new Set(filteredRows.slice(from - 1, to).map((row) => row.contactId)))
   }
 
   const handleClear = async () => {
@@ -570,7 +580,7 @@ const IntelligenceData = () => {
               <input
                 type="number"
                 min={1}
-                max={rows.length}
+                max={filteredRows.length}
                 value={rangeFrom}
                 onChange={(event) => setRangeFrom(event.target.value)}
                 placeholder="From"
@@ -580,7 +590,7 @@ const IntelligenceData = () => {
               <input
                 type="number"
                 min={1}
-                max={rows.length}
+                max={filteredRows.length}
                 value={rangeTo}
                 onChange={(event) => setRangeTo(event.target.value)}
                 onKeyDown={(event) => event.key === 'Enter' && applyRange()}
@@ -696,7 +706,7 @@ const IntelligenceData = () => {
                               onChange={() => toggleRow(row.contactId)}
                             />
                           </td>
-                          <td className={`${cellClass} text-center font-bold tabular-nums text-[#476072]`}>{row.srNo}</td>
+                          <td className={`${cellClass} text-center font-bold tabular-nums text-[#476072]`}>{index + 1}</td>
                           <td className={`${cellClass} text-[#102a43]`}>
                             <div className="break-words font-semibold leading-snug">{row.companyName}</div>
                             {companyIds.length > 1 && (
