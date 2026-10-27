@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle, XCircle, Send, Download, Clock, RefreshCw, Search, Trash2 } from 'lucide-react'
-import * as XLSX from 'xlsx'
 import { clearEmailHistory, fetchEmailHistory } from '../../config/api'
 import MiLoader from '../MiLoader'
 
@@ -36,7 +35,8 @@ const formatTimestamp = (timestamp) => {
   })
 }
 
-const StatusCard = ({ entry }) => {
+// Memoised so typing in the search box doesn't re-render every card in a long history.
+const StatusCard = memo(({ entry }) => {
   const isSent = entry.status === 'sent'
   const formattedTimestamp = formatTimestamp(entry.sentAt)
 
@@ -84,7 +84,7 @@ const StatusCard = ({ entry }) => {
       </span>
     </div>
   )
-}
+})
 
 const Status = () => {
   const [history, setHistory] = useState([])
@@ -134,8 +134,10 @@ const Status = () => {
     return counts
   }, [history])
 
+  // The input updates immediately; the (possibly long) list catches up when React is idle.
+  const deferredSearch = useDeferredValue(search)
   const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase()
+    const term = deferredSearch.trim().toLowerCase()
     return history.filter(
       (entry) =>
         (typeFilter === 'all' || entry.type === typeFilter) &&
@@ -144,11 +146,12 @@ const Status = () => {
             String(value ?? '').toLowerCase().includes(term)
           ))
     )
-  }, [history, typeFilter, search])
+  }, [history, typeFilter, deferredSearch])
 
   const sentCount = filtered.filter((entry) => entry.status === 'sent').length
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
+    const XLSX = await import('xlsx')
     const rows = filtered.map((entry) => ({
       Type: TYPE_LABELS[entry.type] || entry.type,
       'Company Name': entry.companyName || '',

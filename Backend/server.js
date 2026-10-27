@@ -14,7 +14,19 @@ const frontendDist = path.join(__dirname, '../Frontend/dist')
 
 app.use(cors())
 app.use(express.json({ limit: '20mb' }))
-app.use(express.static(frontendDist))
+// Vite fingerprints everything in /assets, so those files can be cached for a year;
+// index.html is always revalidated so a new build is picked up straight away.
+app.use(
+  express.static(frontendDist, {
+    setHeaders: (res, filePath) => {
+      if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+      } else if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache')
+      }
+    },
+  })
+)
 app.use('/api/intel', intelRoutes)
 
 const transporter = nodemailer.createTransport({
@@ -181,7 +193,8 @@ app.post('/api/generate-email', async (req, res) => {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4.1-nano',
+        model: 'gpt-5.6-luna',
+        reasoning_effort: 'medium',
         messages: [{ role: 'user', content: prompt }],
       }),
     })

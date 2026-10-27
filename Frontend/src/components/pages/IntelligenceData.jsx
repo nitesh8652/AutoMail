@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, CheckCircle2, ChevronRight, Database, Filter, FileSpreadsheet, MailCheck, Plus, RefreshCw, Search, Trash2, Users } from 'lucide-react'
 import { clearIntelligenceData, fetchIntelligenceRecords, generateEmailForRecord } from '../../config/api'
@@ -229,10 +229,14 @@ const IntelligenceData = () => {
     setSelected((prev) => new Set([...prev].filter((id) => allowed.has(id))))
   }
 
+  // Inputs update immediately; the (possibly thousands of rows) table catches up when React is idle.
+  const deferredCompanySearch = useDeferredValue(companySearch)
+  const deferredNameSearch = useDeferredValue(nameSearch)
+  const deferredEmailSearch = useDeferredValue(emailSearch)
   const filteredRows = useMemo(() => {
-    const companyTerm = companySearch.trim().toLowerCase()
-    const nameTerm = nameSearch.trim().toLowerCase()
-    const emailTerm = emailSearch.trim().toLowerCase()
+    const companyTerm = deferredCompanySearch.trim().toLowerCase()
+    const nameTerm = deferredNameSearch.trim().toLowerCase()
+    const emailTerm = deferredEmailSearch.trim().toLowerCase()
     return rows.filter(
       (row) =>
         (!sentOnly || row.lastSentAt) &&
@@ -242,7 +246,7 @@ const IntelligenceData = () => {
         (!nameTerm || row.directorName.toLowerCase().includes(nameTerm)) &&
         (!emailTerm || row.email.toLowerCase().includes(emailTerm))
     )
-  }, [rows, companySearch, nameSearch, emailSearch, sentOnly, amountFilter])
+  }, [rows, deferredCompanySearch, deferredNameSearch, deferredEmailSearch, sentOnly, amountFilter])
 
   const directorsByCompany = useMemo(() => {
     const map = new Map()

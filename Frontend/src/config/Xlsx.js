@@ -1,4 +1,5 @@
-import * as XLSX from 'xlsx'
+// xlsx is large, so it is only downloaded the first time a sheet is read.
+const loadXlsx = () => import('xlsx')
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -83,8 +84,9 @@ export const extractProjectsFromFile = (file, { validateEmail = true } = {}) => 
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
 
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
+        const XLSX = await loadXlsx()
         const workbook = XLSX.read(event.target.result, { type: 'array' })
         let foundEmailColumn = false
         const projects = []
@@ -202,8 +204,9 @@ const extractCompanyEmailsFromFile = (file, { validateEmail = true } = {}, toRec
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
 
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
+        const XLSX = await loadXlsx()
         const workbook = XLSX.read(event.target.result, { type: 'array' })
         let foundEmailColumn = false
         let foundNameColumn = false
@@ -392,8 +395,9 @@ export const extractEmailsFromFile = (file, { validateEmail = true } = {}) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
 
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
+        const XLSX = await loadXlsx()
         const workbook = XLSX.read(event.target.result, { type: 'array' })
         let foundEmailColumn = false
         const seen = new Set()
@@ -480,8 +484,9 @@ const matchHeadersWith = (patterns, headers) => {
 const readWorkbookRows = (file) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
+        const XLSX = await loadXlsx()
         const workbook = XLSX.read(event.target.result, { type: 'array' })
         resolve(
           workbook.SheetNames
