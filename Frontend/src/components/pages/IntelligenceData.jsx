@@ -2,6 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, CheckCircle2, ChevronRight, Database, Filter, FileSpreadsheet, MailCheck, Plus, RefreshCw, Search, Trash2, Users } from 'lucide-react'
 import { clearIntelligenceData, fetchIntelligenceRecords, generateEmailForRecord } from '../../config/api'
+import { mapWithConcurrency } from '../../config/concurrency'
 import { parseEnquiryAmount, toIntelligenceRecord } from '../../config/Xlsx'
 import { LAST_SCAN_STORAGE_KEY, safeSetItem } from '../../config/storage'
 import TypewriterLoader from '../TypewriterLoader'
@@ -45,23 +46,6 @@ const formatDate = (value) =>
         minute: '2-digit',
       })
     : null
-
-const mapWithConcurrency = async (items, limit, fn, onProgress) => {
-  const results = new Array(items.length)
-  let next = 0
-  let done = 0
-  const worker = async () => {
-    while (next < items.length) {
-      const index = next
-      next += 1
-      results[index] = await fn(items[index])
-      done += 1
-      onProgress(done)
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
-  return results
-}
 
 const StatCard = ({ label, value, hint, tone }) => (
   <div className={`rounded-[16px] border bg-white/95 p-4 shadow-[0_12px_40px_rgba(22,65,96,0.06)] ${tone.border}`}>
@@ -341,8 +325,8 @@ const IntelligenceData = () => {
         GENERATE_CONCURRENCY,
         async (record) => {
           try {
-            const generatedEmail = await generateEmailForRecord(record)
-            return { ...record, generatedEmail, generationError: null }
+            const generated = await generateEmailForRecord(record)
+            return { ...record, ...generated, generationError: null }
           } catch (err) {
             return { ...record, generatedEmail: '', generationError: err.message || 'Failed to generate content.' }
           }

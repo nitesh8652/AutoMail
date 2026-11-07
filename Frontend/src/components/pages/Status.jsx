@@ -9,7 +9,8 @@ const TYPE_LABELS = {
   nbfcFollowUp: 'NBFC follow-up',
   intelligenceFollowUp: 'Intelligence follow-up',
   housing: 'Housing Finance',
-  marketing: 'Marketing',
+  realEstate: 'Real Estate',
+  other: 'Other',
 }
 
 const TYPE_STYLES = {
@@ -18,7 +19,8 @@ const TYPE_STYLES = {
   nbfcFollowUp: 'bg-amber-100 text-amber-700',
   intelligenceFollowUp: 'bg-fuchsia-100 text-fuchsia-700',
   housing: 'bg-emerald-100 text-emerald-700',
-  marketing: 'bg-slate-100 text-slate-600',
+  realEstate: 'bg-indigo-100 text-indigo-700',
+  other: 'bg-slate-100 text-slate-600',
 }
 
 const formatTimestamp = (timestamp) => {
@@ -54,8 +56,8 @@ const StatusCard = memo(({ entry }) => {
           <h3 className="truncate text-[15px] font-extrabold tracking-[-0.01em] text-[#102a43]">
             {entry.companyName || entry.subject || entry.email}
           </h3>
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.04em] ${TYPE_STYLES[entry.type] || TYPE_STYLES.marketing}`}>
-            {TYPE_LABELS[entry.type] || entry.type}
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.04em] ${TYPE_STYLES[entry.type] || TYPE_STYLES.other}`}>
+            {TYPE_LABELS[entry.type] || 'Other'}
           </span>
         </div>
         {entry.directorName && (

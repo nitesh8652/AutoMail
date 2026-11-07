@@ -7,15 +7,43 @@ import {
 } from './Xlsx'
 import { API_BASE } from './env'
 
+// Reads a JSON reply. An HTML reply ("Cannot POST ...") means the backend doesn't have this route,
+// almost always because it is still running an older version and needs a restart.
+const readJson = async (response) => {
+  const text = await response.text()
+  try {
+    return JSON.parse(text)
+  } catch {
+    const missingRoute = /Cannot (GET|POST|DELETE|PUT)/i.test(text)
+    throw new Error(
+      missingRoute
+        ? 'The backend server is out of date and does not know this request. Restart the backend (npm start in the Backend folder) and try again.'
+        : `The server sent an unexpected reply (status ${response.status}). Check that the backend is running.`
+    )
+  }
+}
+
 export const generateEmailContent = async (prompt) => {
   const response = await fetch(`${API_BASE}/api/generate-email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt }),
   })
-  const data = await response.json()
+  const data = await readJson(response)
   if (!response.ok) throw new Error(data.error || 'Failed to generate content.')
   return data.output
+}
+
+// Real Estate: the server reads the company's website and fills the fixed template.
+export const generateRealEstateEmail = async (record) => {
+  const response = await fetch(`${API_BASE}/api/generate-real-estate-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ companyName: record.companyName, website: record.website, contactName: record.contactName }),
+  })
+  const data = await readJson(response)
+  if (!response.ok) throw new Error(data.error || 'Failed to generate content.')
+  return { output: data.output, whatsapp: data.whatsapp || '', linkWarnings: data.linkWarnings || [] }
 }
 
 // `meta` ({ type, companyName, directorName }) is stored with the send for the Status history.
@@ -25,7 +53,7 @@ export const sendEmail = async ({ to, subject, text, meta, inReplyTo, references
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ to, subject, text, meta, inReplyTo, references }),
   })
-  const data = await response.json()
+  const data = await readJson(response)
   if (!response.ok) throw new Error(data.error || 'Failed to send email.')
   return data
 }
@@ -39,9 +67,18 @@ const shortenFirmNameInBody = (text) => {
   return body.replace(/Express Rupya Capital Advisors/gi, 'Express Rupya') + rest
 }
 
-// Marketing prompts return the full email; NBFC and Marketing Intelligence prompts
+// Real Estate returns the full email; NBFC and Marketing Intelligence prompts
 // return a single line that gets dropped into their fixed templates.
+// Resolves to { generatedEmail, linkWarnings } (+ whatsappMessage for Real Estate).
 export const generateEmailForRecord = async (record) => {
+  if (record.mode === 'realEstate') {
+    const { output, whatsapp, linkWarnings } = await generateRealEstateEmail(record)
+    return { generatedEmail: output, whatsappMessage: whatsapp, linkWarnings }
+  }
+  return { generatedEmail: await generateTemplatedEmail(record), linkWarnings: [] }
+}
+
+const generateTemplatedEmail = async (record) => {
   // Follow-ups use a fixed template, so "regenerate" just rebuilds it.
   if (record.mode === 'nbfcFollowUp') return buildNbfcFollowUpText(record.companyName, record.thread, record.senderName)
   if (record.mode === 'intelligenceFollowUp') return buildIntelligenceFollowUpText(record.companyName, record.thread)
@@ -49,17 +86,15 @@ export const generateEmailForRecord = async (record) => {
   if (record.mode === 'housing') return buildHousingFinanceText(record.companyName)
   const output = await generateEmailContent(record.prompt)
   if (record.mode === 'nbfc') return shortenFirmNameInBody(buildNbfcEmail(record, output))
-  if (record.mode === 'intelligence') {
-    return shortenFirmNameInBody(buildIntelligenceEmail(record, output))
-  }
-  return shortenFirmNameInBody(output)
+  if (record.mode === 'intelligence') return shortenFirmNameInBody(buildIntelligenceEmail(record, output))
+  throw new Error(`Unknown email type "${record.mode}".`)
 }
 
 // ---------- Marketing Intelligence (MySQL-backed) ----------
 
 const requestJson = async (path, options, fallbackError) => {
   const response = await fetch(`${API_BASE}${path}`, options)
-  const data = await response.json().catch(() => ({}))
+  const data = await readJson(response)
   if (!response.ok) throw new Error(data.error || fallbackError)
   return data
 }

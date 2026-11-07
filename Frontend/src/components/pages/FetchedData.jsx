@@ -2,33 +2,20 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { ChevronRight, FileSpreadsheet } from 'lucide-react'
 import { generateEmailForRecord } from '../../config/api'
+import { mapWithConcurrency } from '../../config/concurrency'
 import { safeSetItem } from '../../config/storage'
 import TypewriterLoader from '../TypewriterLoader'
 
+// Every sheet on this page is company name + email; Real Estate also has the company website.
 const COLUMNS = [
-  { key: 'srNo', label: 'SR No' },
-  { key: 'directorName', label: 'Director' },
-  { key: 'email', label: 'Email' },
-  { key: 'projectName', label: 'Project Name' },
-  { key: 'projectType', label: 'Type' },
-  { key: 'launchDate', label: 'Start Date' },
-  { key: 'completionDate', label: 'Completion Date' },
-  { key: 'launchedSqft', label: 'Launched Sqft' },
-  { key: 'launchedUnits', label: 'Launched Units' },
-  { key: 'unitSizeMin', label: 'Unit Size Min' },
-  { key: 'unitSizeMax', label: 'Unit Size Max' },
-  { key: 'percentSold', label: '% Sold' },
-  { key: 'newLaunchPrice', label: 'Launched Price' },
-  { key: 'absorbedUnits', label: 'Absorbed Units' },
-  { key: 'constructionStage', label: 'Stage' },
-  // { key: 'prompt', label: 'Message' },
-]
-
-const NBFC_COLUMNS = [
   { key: 'srNo', label: 'SR No' },
   { key: 'companyName', label: 'Name' },
   { key: 'email', label: 'Email' },
 ]
+const REAL_ESTATE_COLUMNS = [...COLUMNS, { key: 'website', label: 'Website' }]
+
+// Real Estate emails open web pages too, so only a few are written at once.
+const GENERATE_CONCURRENCY = 5
 
 const FetchedData = () => {
   const location = useLocation()
@@ -36,9 +23,8 @@ const FetchedData = () => {
   const [projects, setProjects] = useState([])
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState(null)
-  // NBFC and Housing Finance sheets are just company name + email.
-  const isNbfc = ['nbfc', 'housing'].includes(projects[0]?.mode)
-  const columns = isNbfc ? NBFC_COLUMNS : COLUMNS
+  const [generatedCount, setGeneratedCount] = useState(0)
+  const columns = projects[0]?.mode === 'realEstate' ? REAL_ESTATE_COLUMNS : COLUMNS
 
   useEffect(() => {
     if (location.state?.projects) {
@@ -59,16 +45,20 @@ const FetchedData = () => {
     if (projects.length === 0 || generating) return
     setGenerating(true)
     setGenerateError(null)
+    setGeneratedCount(0)
     try {
-      const results = await Promise.all(
-        projects.map(async (project) => {
+      const results = await mapWithConcurrency(
+        projects,
+        GENERATE_CONCURRENCY,
+        async (project) => {
           try {
-            const generatedEmail = await generateEmailForRecord(project)
-            return { ...project, generatedEmail, generationError: null }
+            const generated = await generateEmailForRecord(project)
+            return { ...project, ...generated, generationError: null }
           } catch (err) {
             return { ...project, generatedEmail: '', generationError: err.message || 'Failed to generate content.' }
           }
-        })
+        },
+        setGeneratedCount
       )
       safeSetItem('automationResults', results)
       navigate('/automation', { state: { results } })
@@ -84,7 +74,9 @@ const FetchedData = () => {
       {generating && (
         <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-4 bg-white/85 backdrop-blur-sm">
           <TypewriterLoader />
-          <p className="text-sm font-bold text-slate-600">Generating emails…</p>
+          <p className="text-sm font-bold text-slate-600">
+            Generating emails… {generatedCount} of {projects.length}
+          </p>
         </div>
       )}
       <div className="mb-6">
@@ -92,8 +84,8 @@ const FetchedData = () => {
         <h1 className="font-heading text-[28px] font-extrabold tracking-[-0.03em] text-[#102a43] sm:text-[34px]">Fetched Data</h1>
         <p className="mt-2 text-[15px] text-[#617487]">
           {projects.length > 0
-            ? `${projects.length} ${isNbfc ? (projects.length > 1 ? 'companies' : 'company') : `project${projects.length > 1 ? 's' : ''}`} parsed from your spreadsheet.`
-            : 'Upload a file from the home page to see parsed project data here.'}
+            ? `${projects.length} email${projects.length > 1 ? 's' : ''} parsed from your spreadsheet — one draft will be written for each.`
+            : 'Upload a file from the home page to see the parsed data here.'}
         </p>
       </div>
 
@@ -104,13 +96,13 @@ const FetchedData = () => {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-[18px] border border-[#e3edf4] bg-white/95 shadow-[0_24px_70px_rgba(22,65,96,0.08)]">
-          <table className={`w-full ${isNbfc ? '' : 'min-w-[1400px]'} border-collapse text-left text-[13px]`}>
+          <table className="w-full border-collapse text-left text-[13px]">
             <thead>
               <tr className="bg-[#eaf5fc]">
                 {columns.map((column) => (
                   <th
                     key={column.key}
-                    className={`whitespace-nowrap border-b border-[#e3edf4] px-4 py-3 font-extrabold tracking-[0.02em] text-[#1070BA] ${column.key === 'srNo' ? 'w-[50px]' : column.key === 'email' ? 'w-[30px]' : column.key === 'prompt' ? 'min-w-[420px]' : ''}`}
+                    className={`whitespace-nowrap border-b border-[#e3edf4] px-4 py-3 font-extrabold tracking-[0.02em] text-[#1070BA] ${column.key === 'srNo' ? 'w-[50px]' : column.key === 'email' ? 'w-[30px]' : ''}`}
                   >
                     {column.label}
                   </th>
@@ -123,7 +115,7 @@ const FetchedData = () => {
                   {columns.map((column) => (
                     <td
                       key={column.key}
-                      className={`border-b border-[#e3edf4] px-4 py-3 align-top text-[#102a43] ${column.key === 'prompt' ? 'min-w-[420px] whitespace-normal leading-[1.6]' : column.key === 'email' ? 'max-w-[700px] truncate' : column.key === 'srNo' ? 'whitespace-nowrap text-center' : 'whitespace-nowrap'}`}
+                      className={`border-b border-[#e3edf4] px-4 py-3 align-top text-[#102a43] ${column.key === 'email' ? 'max-w-[700px] truncate' : column.key === 'srNo' ? 'whitespace-nowrap text-center' : 'whitespace-nowrap'}`}
                     >
                       {column.key === 'srNo' ? index + 1 : project[column.key]}
                     </td>

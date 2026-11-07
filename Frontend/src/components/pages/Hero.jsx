@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, ChevronRight, Database, LockKeyhole, Upload } from 'lucide-react'
-import { extractHousingFromFile, extractNbfcFromFile, extractProjectsFromFile, readIntelligenceFiles } from '../../config/Xlsx'
+import { extractHousingFromFile, extractNbfcFromFile, extractRealEstateFromFile, readIntelligenceFiles } from '../../config/Xlsx'
 import { uploadIntelligenceData } from '../../config/api'
 import { LAST_SCAN_STORAGE_KEY, safeSetItem } from '../../config/storage'
 import { MODES, useMode } from '../../config/mode'
@@ -54,6 +54,7 @@ const Hero = () => {
   const { mode } = useMode()
   const [intelFiles, setIntelFiles] = useState({ contacts: null, values: null })
   const isIntelligence = mode === 'intelligence'
+  const isRealEstate = mode === 'realEstate'
   const { label: modeLabel, Icon: ModeIcon } = MODES.find(({ key }) => key === mode)
   const ready = isIntelligence ? Boolean(intelFiles.contacts && intelFiles.values) : Boolean(file)
 
@@ -86,9 +87,9 @@ const Hero = () => {
         navigate('/intelligence')
         return
       }
-      const extract = { nbfc: extractNbfcFromFile, housing: extractHousingFromFile }[mode] ?? extractProjectsFromFile
+      const extract = { realEstate: extractRealEstateFromFile, nbfc: extractNbfcFromFile, housing: extractHousingFromFile }[mode]
       const projects = await extract(file, { validateEmail })
-      console.log(projects)
+      if (projects.length === 0) throw new Error('No rows with a company name and a valid email were found in the file.')
       safeSetItem('fetchedProjects', projects)
       navigate('/fetched', { state: { projects } })
     } catch (err) {
@@ -193,6 +194,11 @@ const Hero = () => {
           </button>
 
           <input ref={inputRef} className="sr-only" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { selectFile(event.target.files[0]); event.target.value = '' }} />
+          {isRealEstate && (
+            <p className="mt-2 text-center text-[11px] text-[#7c8e9e]">
+              Sheet needs <strong>Company Name</strong>, <strong>Email</strong> and <strong>Website</strong> columns.
+            </p>
+          )}
           </>
         )}
 

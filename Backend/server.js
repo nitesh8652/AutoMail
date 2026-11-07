@@ -5,6 +5,7 @@ const cors = require('cors');
 const nodemailer = require('nodemailer');
 const intelRoutes = require('./routes/intel');
 const { findLastSentTo } = require('./followupThreads');
+const { fetchWebsite } = require('./linkContent');
 const pool = require('./db');
 const { PORT } = require('./config');
 
@@ -47,7 +48,7 @@ const startOfTodayIST = () => {
   return new Date(now - (now % (24 * 60 * 60 * 1000)) - IST_OFFSET_MS)
 }
 
-const EMAIL_TYPES = ['marketing', 'nbfc', 'nbfcFollowUp', 'intelligence', 'intelligenceFollowUp', 'housing']
+const EMAIL_TYPES = ['realEstate', 'nbfc', 'nbfcFollowUp', 'intelligence', 'intelligenceFollowUp', 'housing']
 
 // email_send_log gained columns for the Status history; add them once if this database predates them.
 const HISTORY_COLUMNS = {
@@ -108,7 +109,7 @@ const fromSubject = (subject) => {
     const match = String(subject ?? '').match(pattern)
     if (match) return { type, companyName: match[1].trim() }
   }
-  return { type: 'marketing', companyName: null }
+  return { type: 'other', companyName: null }
 }
 
 // Every email the server has sent (or failed to send), newest first, for the Status page.
@@ -174,6 +175,31 @@ app.get('/', (req, res) => {
   res.send('Hello World!')
 })
 
+class OpenAIError extends Error {
+  constructor(message, status) {
+    super(message)
+    this.status = status
+  }
+}
+
+const askOpenAI = async (prompt) => {
+  const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-5.6-luna',
+      reasoning_effort: 'medium',
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  })
+  const data = await openaiResponse.json()
+  if (!openaiResponse.ok) throw new OpenAIError(data.error?.message || 'OpenAI request failed.', openaiResponse.status)
+  return data.choices?.[0]?.message?.content?.trim() ?? ''
+}
+
 app.post('/api/generate-email', async (req, res) => {
   const prompt = String(req.body?.prompt ?? '').trim()
 
@@ -186,30 +212,192 @@ app.post('/api/generate-email', async (req, res) => {
   }
 
   try {
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-5.6-luna',
-        reasoning_effort: 'medium',
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    })
-
-    const data = await openaiResponse.json()
-
-    if (!openaiResponse.ok) {
-      return res.status(openaiResponse.status).json({ error: data.error?.message || 'OpenAI request failed.' })
-    }
-
-    const output = data.choices?.[0]?.message?.content?.trim() ?? ''
-    res.json({ output })
+    res.json({ output: await askOpenAI(prompt) })
   } catch (error) {
     console.error(error)
-    res.status(500).json({ error: 'Failed to generate email content.' })
+    res.status(error.status || 500).json({ error: error instanceof OpenAIError ? error.message : 'Failed to generate email content.' })
+  }
+})
+
+// ---------- Real Estate (company website -> personalised opening, fixed template) ----------
+
+// LRD (lease rental discounting) only makes sense for companies holding rent-earning assets,
+// so the services line and closing question have two versions.
+const REAL_ESTATE_SERVICES = {
+  withLrd:
+    'At Express Rupya Capital Advisors, we arrange land acquisition funding, project financing, lease rental discounting (LRD) and refinancing of existing borrowings through banks and institutional lenders at competitive terms.',
+  withoutLrd:
+    'At Express Rupya Capital Advisors, we arrange land acquisition funding, project financing and debt refinancing through banks and institutional lenders at competitive terms.',
+}
+const REAL_ESTATE_QUESTION = {
+  withLrd: 'Would exploring cost-effective financing options for your existing assets and upcoming developments be of interest?',
+  withoutLrd: 'Would exploring cost-effective financing options for your existing and upcoming developments be of interest?',
+}
+const REAL_ESTATE_SIGNATURE = `Best regards,
+Amit
+Express Rupya Capital Advisors
++91 85914 58046`
+const REAL_ESTATE_OPENING_MAX_WORDS = 60
+const REAL_ESTATE_DEFAULT_TOPIC = 'Project Financing & Debt Refinancing'
+
+// WhatsApp version: same message cut down to 100 words or fewer, with no subject or signature.
+const WHATSAPP_MAX_WORDS = 100
+const WHATSAPP_OPENING_MAX_WORDS = 35
+const WHATSAPP_SERVICES = {
+  withLrd:
+    'At Express Rupya Capital Advisors, we arrange land acquisition funding, project finance, LRD and refinancing through banks and institutional lenders at competitive terms.',
+  withoutLrd:
+    'At Express Rupya Capital Advisors, we arrange land acquisition funding, project finance and refinancing through banks and institutional lenders at competitive terms.',
+}
+const WHATSAPP_CLOSING =
+  'Would welcome a brief discussion to explore financing opportunities for your ongoing and upcoming projects.'
+const wordCount = (text) => text.split(/\s+/).filter(Boolean).length
+
+// Real emails written by the team; the model copies their style, length and level of detail.
+const REAL_ESTATE_EXAMPLES = [
+  {
+    company: 'Jayalakshmi Group',
+    topic: 'Refinancing & Cost Optimisation',
+    opening:
+      "With Jayalakshmi Group's recent entry into residential development alongside its established commercial and warehousing portfolio, optimising borrowing costs and securing competitive funding for expansion could be valuable.",
+    hasLeasedAssets: true,
+  },
+  {
+    company: 'Vaishnavi Group',
+    topic: 'Land Acquisition Funding & Debt Refinancing',
+    opening:
+      'As Vaishnavi Group advances its premium residential and plotted developments alongside Grade-A commercial and built-to-suit projects in Bengaluru, optimising borrowing costs and securing competitive funding for future expansion could be valuable.',
+    hasLeasedAssets: true,
+  },
+  {
+    company: 'Mista Infra',
+    topic: 'Project Financing & Borrowing Cost Optimisation',
+    opening:
+      'As Mista Infra progresses with its integrated township developments, combining premium residences and commercial spaces across Bengaluru, competitive financing for further development and refinancing existing borrowings could help optimise overall funding costs.',
+    hasLeasedAssets: false,
+  },
+]
+
+// "Prestige Group" -> "Prestige Group's", "Shree Builders" -> "Shree Builders'".
+const possessive = (name) => (/s$/i.test(name) ? `${name}'` : `${name}'s`)
+
+const buildRealEstatePrompt = (companyName, site) =>
+  `You are writing the personalised parts of a short outreach email from Express Rupya Capital Advisors ` +
+  `(a debt advisory firm) to the real estate company "${companyName}".\n\n` +
+  (site.ok
+    ? `TEXT FROM THE COMPANY'S WEBSITE (${site.url}):\n` + site.pages.map((page) => `--- ${page.url} ---\n${page.text}`).join('\n\n') + '\n\n'
+    : `The company's website could not be read, so you know nothing specific about them beyond their name.\n\n`) +
+  `Return JSON only, in exactly this shape: {"topic": "...", "opening": "...", "shortOpening": "...", "hasLeasedAssets": true|false}\n\n` +
+  `EXAMPLES of what the team wants (match this style, length and level of detail):\n` +
+  REAL_ESTATE_EXAMPLES.map((example) => JSON.stringify(example)).join('\n') +
+  `\n\n` +
+  `"topic": the subject line will read "${companyName} | <topic>". 2-6 words naming the one or two financing angles that fit this company best, ` +
+  `in the style of the examples (e.g. "Land Acquisition Funding & Debt Refinancing", "Project Financing & Borrowing Cost Optimisation", ` +
+  `"Refinancing & Cost Optimisation", "LRD & Refinancing"). Title Case, joined with "&".\n\n` +
+  `"opening": ONE sentence, about 30-45 words (never more than ${REAL_ESTATE_OPENING_MAX_WORDS - 10}), the first line of the email after "Dear Sir,".\n` +
+  `- Start with "As ${companyName} advances/progresses/expands…" or "With ${possessive(companyName)}…", like the examples ` +
+  `(you may shorten the name the way the company itself does, e.g. drop "Private Limited").\n` +
+  `- Name what they actually build, from the website text: segments (premium residential, plotted development, villas, integrated townships, ` +
+  `Grade-A commercial, warehousing, retail, built-to-suit), a recent move or flagship project, and the city or cities they build in.\n` +
+  `- Then tie it to optimising borrowing costs, securing competitive funding for expansion, or refinancing existing borrowings.\n` +
+  `- Use only facts from the website text. No figures unless they appear there. Never say or imply that we looked at their website.\n` +
+  (site.ok ? '' : `- Since nothing is known about them, keep it general (their real estate developments and growth) without specific claims.\n`) +
+  `- Do not mention Express Rupya, our services, or ask a question — those come later in the email.\n` +
+  `- British spelling (optimising), plain text, no quotes around the sentence, no markdown.\n\n` +
+  `"shortOpening": the same idea for a short WhatsApp message — ONE sentence of 18-28 words (never more than ${WHATSAPP_OPENING_MAX_WORDS}), ` +
+  `same rules as "opening". Example: "As Mista Infra advances its residential and commercial developments in Bengaluru, ` +
+  `competitive financing could help optimise borrowing costs and support future growth."\n\n` +
+  `"hasLeasedAssets": true only if the company owns or develops rent-earning assets it keeps — Grade-A offices, warehousing/logistics parks, ` +
+  `malls/retail, built-to-suit or leased commercial property. False for developers who mainly build homes, plots or townships to sell ` +
+  `(commercial units inside a township that are sold do not count).${site.ok ? '' : ' With nothing known, use false.'}`
+
+// The model's JSON, checked; anything unusable falls back to a safe general line.
+const parseRealEstateParts = (raw, companyName) => {
+  let parsed = {}
+  try {
+    parsed = JSON.parse(String(raw).replace(/^```(?:json)?\s*|\s*```$/g, ''))
+  } catch {
+    parsed = {}
+  }
+  const clean = (value) =>
+    String(value ?? '')
+      .replace(/\*\*/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^["']|["']$/g, '')
+
+  let topic = clean(parsed.topic).replace(/^.*\|\s*/, '').replace(/\.+$/, '')
+  if (!topic || topic.split(' ').length > 8) topic = REAL_ESTATE_DEFAULT_TOPIC
+
+  // Models often write "Builders's"; English wants "Builders'".
+  let opening = clean(parsed.opening).replace(/\.*$/, '.').replace(/\b(\w*s)'s\b/g, "$1'")
+  const usable =
+    opening.length > 20 &&
+    opening.split(' ').length <= REAL_ESTATE_OPENING_MAX_WORDS &&
+    !/express rupya|website|\?/i.test(opening)
+  if (!usable) {
+    opening = `As ${companyName} continues to grow its real estate developments, optimising borrowing costs and securing competitive funding for upcoming projects could be valuable.`
+  }
+  let shortOpening = clean(parsed.shortOpening).replace(/\.*$/, '.').replace(/\b(\w*s)'s\b/g, "$1'")
+  const shortUsable =
+    shortOpening.length > 20 &&
+    wordCount(shortOpening) <= WHATSAPP_OPENING_MAX_WORDS &&
+    !/express rupya|website|\?/i.test(shortOpening)
+  if (!shortUsable) {
+    shortOpening = `As ${companyName} grows its real estate developments, competitive financing could help optimise borrowing costs and support future growth.`
+  }
+  return { topic, opening, shortOpening, hasLeasedAssets: parsed.hasLeasedAssets === true }
+}
+
+const buildWhatsAppMessage = (greeting, shortOpening, variant, companyName) => {
+  const build = (opening) => `${greeting}\n\n${opening}\n\n${WHATSAPP_SERVICES[variant]}\n\n${WHATSAPP_CLOSING}`
+  const message = build(shortOpening)
+  return wordCount(message) <= WHATSAPP_MAX_WORDS
+    ? message
+    : build(`As ${companyName} grows, competitive financing could help optimise borrowing costs.`)
+}
+
+const greetingFor = (contactName) => {
+  const first = String(contactName ?? '')
+    .trim()
+    .split(/\s+/)
+    .find((part) => part.replace(/[^A-Za-z]/g, '').length > 1 && !/^(mr|mrs|ms|dr|shri|smt)\.?$/i.test(part))
+  return first ? `Dear ${first.charAt(0).toUpperCase()}${first.slice(1).toLowerCase()},` : 'Dear Sir,'
+}
+
+// Real Estate mode: reads the company's website from the sheet and writes the subject topic and opening
+// line from it; the services paragraph, question and signature are fixed.
+app.post('/api/generate-real-estate-email', async (req, res) => {
+  const companyName = String(req.body?.companyName ?? '').trim()
+  const website = String(req.body?.website ?? '').trim()
+  const contactName = String(req.body?.contactName ?? '').trim()
+
+  if (!companyName) return res.status(400).json({ error: '"companyName" is required.' })
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(500).json({ error: 'OPENAI_API_KEY is not configured on the server.' })
+  }
+
+  try {
+    const site = website ? await fetchWebsite(website) : { ok: false, url: '', error: 'no website in the sheet' }
+    const { topic, opening, shortOpening, hasLeasedAssets } = parseRealEstateParts(
+      await askOpenAI(buildRealEstatePrompt(companyName, site)),
+      companyName
+    )
+    const variant = hasLeasedAssets ? 'withLrd' : 'withoutLrd'
+    const greeting = greetingFor(contactName)
+    const output =
+      `Subject: ${companyName} | ${topic}\n\n` +
+      `${greeting}\n\n${opening}\n\n${REAL_ESTATE_SERVICES[variant]}\n\n${REAL_ESTATE_QUESTION[variant]}\n\n${REAL_ESTATE_SIGNATURE}`
+    res.json({
+      output,
+      whatsapp: buildWhatsAppMessage(greeting, shortOpening, variant, companyName),
+      linkWarnings: site.ok
+        ? []
+        : [website ? `Couldn't read ${site.url} — ${site.error}.` : 'No website for this company in the sheet.'],
+    })
+  } catch (error) {
+    console.error(error)
+    res.status(error.status || 500).json({ error: error instanceof OpenAIError ? error.message : 'Failed to generate email content.' })
   }
 })
 
