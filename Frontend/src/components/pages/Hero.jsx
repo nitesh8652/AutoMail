@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, ChevronRight, Database, LockKeyhole, Upload } from 'lucide-react'
-import { extractHousingFromFile, extractNbfcFromFile, extractRealEstateFromFile, readIntelligenceFiles } from '../../config/Xlsx'
+import { extractDcAdvisorsFromFile, extractHousingFromFile, extractNbfcFromFile, extractRealEstateFromFile, readIntelligenceFiles } from '../../config/Xlsx'
 import { uploadIntelligenceData } from '../../config/api'
 import { LAST_SCAN_STORAGE_KEY, safeSetItem } from '../../config/storage'
 import { MODES, useMode } from '../../config/mode'
@@ -87,7 +87,7 @@ const Hero = () => {
         navigate('/intelligence')
         return
       }
-      const extract = { realEstate: extractRealEstateFromFile, nbfc: extractNbfcFromFile, housing: extractHousingFromFile }[mode]
+      const extract = { realEstate: extractRealEstateFromFile, nbfc: extractNbfcFromFile, housing: extractHousingFromFile, dcAdvisors: extractDcAdvisorsFromFile }[mode]
       const projects = await extract(file, { validateEmail })
       if (projects.length === 0) throw new Error('No rows with a company name and a valid email were found in the file.')
       safeSetItem('fetchedProjects', projects)
@@ -197,6 +197,11 @@ const Hero = () => {
           {isRealEstate && (
             <p className="mt-2 text-center text-[11px] text-[#7c8e9e]">
               Sheet needs <strong>Company Name</strong>, <strong>Email</strong> and <strong>Website</strong> columns.
+            </p>
+          )}
+          {mode === 'dcAdvisors' && (
+            <p className="mt-2 text-center text-[11px] text-[#7c8e9e]">
+              Sheet needs <strong>company_name</strong>, <strong>contact_name</strong> and <strong>contact_email</strong> columns (any position).
             </p>
           )}
           </>

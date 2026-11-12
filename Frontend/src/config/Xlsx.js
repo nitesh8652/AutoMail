@@ -201,6 +201,132 @@ export const extractHousingFromFile = (file, options) =>
     directorName: '',
   }))
 
+// ---------- DC Advisors (data centre outreach, fixed template) ----------
+
+// Matched by header name, so the columns can be in any order/position.
+const DC_HEADER_PATTERNS = {
+  // "contact_email", "Email", "E-mail ID", "Contact Email"...
+  email: /(^|[-_\s])e[-_\s]?mail/i,
+  contactName: /^(contact|director|person|first)[-_\s]*(name)?$|^name$/i,
+  companyName: /^(company|organi[sz]ation|firm)[-_\s]*(name)?$/i,
+}
+
+// "Mr. JOHN smith" -> "John"; empty when the cell has no usable name.
+const DC_TITLES = /^(mr|mrs|ms|miss|dr|prof|sir|shri|smt)\.?$/i
+const toDcGreetingName = (contactName) => {
+  const words = String(contactName ?? '').trim().split(/\s+/).filter((word) => !DC_TITLES.test(word))
+  return toFirstNameTitleCase(words[0])
+}
+
+const DC_ADVISORS_SUBJECT_SUFFIX =
+  'India Data Centre Expansion | Strategic Real Estate, Power Infrastructure & Capital Advisory'
+
+// "<company_name> - India Data Centre Expansion | ..."; just the suffix when the company cell is empty.
+export const buildDcAdvisorsSubject = (company) => {
+  const name = String(company ?? '').trim().replace(/\s+/g, ' ')
+  return name ? `${name} - ${DC_ADVISORS_SUBJECT_SUFFIX}` : DC_ADVISORS_SUBJECT_SUFFIX
+}
+
+// Subject uses the company_name column; the greeting uses contact_name.
+export const buildDcAdvisorsText = ({ company, contactName }) =>
+  `Subject: ${buildDcAdvisorsSubject(company)}\n\n` +
+  `Dear ${toDcGreetingName(contactName) || 'Sir/Madam'},\n\n` +
+  `Greetings from Express Rupya Capital Advisors!\n\n` +
+  `I am Divya Jain, representing Express Rupya Capital Advisors, an India-based Real Estate and Financial Advisory firm specialising in strategic land acquisition, infrastructure advisory and capital raising for data centre developers, hyperscalers and global infrastructure investors.\n\n` +
+  `India is emerging as a significant destination for global data centre investments, supported by expanding digital infrastructure, AI-driven demand and favourable government initiatives.\n\n` +
+  `Notably, the Union Budget 2026–27 introduced an income tax exemption framework extending until 31 March 2047 for eligible foreign cloud service providers utilising specified data centre infrastructure in India, subject to prescribed eligibility and regulatory conditions.\n\n` +
+  `How Express Rupya Can Support Your India Expansion\n\n` +
+  `- Strategic Real Estate & Land Acquisition: Identification, evaluation and facilitation of large land parcels suitable for hyperscale data centres across key Indian markets.\n` +
+  `- Power & Infrastructure Advisory: Support for grid connectivity, power sourcing, substation infrastructure, fibre connectivity and essential utilities.\n` +
+  `- Debt & Equity Capital Advisory: Arranging institutional financing, structured debt, private credit and equity capital for land acquisition and infrastructure development.\n` +
+  `- Cooling & Thermal Infrastructure: Facilitating partnerships for efficient cooling, heat management and sustainable data centre solutions.\n` +
+  `- Transaction Facilitation: Coordination with landowners, infrastructure providers, government authorities and relevant stakeholders to support project execution.\n\n` +
+  `With our experience across real estate transactions, institutional financing and infrastructure opportunities, we aim to serve as a strategic local partner for international companies evaluating entry or expansion in India.\n\n` +
+  `We would welcome an opportunity to understand your India expansion strategy and explore potential areas of collaboration.\n\n` +
+  `Would you be available for a brief 20–30 minute virtual introductory meeting at your convenience?\n\n` +
+  `We look forward to connecting with you.\n\n` +
+  `Best Regards,\n` +
+  `Divya Jain\n` +
+  `Express Rupya Capital Advisors\n` +
+  `+91 84540 38196\n` +
+  `www.expressrupya.com`
+
+// Sheet needs contact_email and contact_name columns; company_name (for the subject) is optional.
+export const extractDcAdvisorsFromFile = (file, { validateEmail = true } = {}) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.onload = async (event) => {
+      try {
+        const XLSX = await loadXlsx()
+        const workbook = XLSX.read(event.target.result, { type: 'array' })
+        let foundEmailColumn = false
+        let foundNameColumn = false
+        const records = []
+
+        workbook.SheetNames.forEach((sheetName) => {
+          const grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '' })
+
+          // The header row may sit below a title or blank rows; use the first row (of the top 20) that has an email header.
+          const findHeaders = (cells) => {
+            const map = {}
+            cells.forEach((cell, columnIndex) => {
+              const header = String(cell ?? '').trim()
+              if (!header) return
+              Object.entries(DC_HEADER_PATTERNS).forEach(([field, pattern]) => {
+                if (map[field] === undefined && pattern.test(header)) map[field] = columnIndex
+              })
+            })
+            return map
+          }
+          const headerRowIndex = grid.slice(0, 20).findIndex((cells) => findHeaders(cells).email !== undefined)
+          if (headerRowIndex === -1) return
+          const headerMap = findHeaders(grid[headerRowIndex])
+          foundEmailColumn = true
+          if (headerMap.contactName === undefined) return
+          foundNameColumn = true
+
+          grid.slice(headerRowIndex + 1).forEach((row) => {
+            const emails = splitLines(row[headerMap.email])
+            const contactNames = splitLines(row[headerMap.contactName])
+            const companyName = headerMap.companyName !== undefined ? String(row[headerMap.companyName] ?? '').trim() : ''
+
+            emails.forEach((email, index) => {
+              if (validateEmail && !EMAIL_PATTERN.test(email)) return
+              const contactName = contactNames[index] ?? contactNames[0] ?? ''
+              records.push({
+                mode: 'dcAdvisors',
+                email,
+                contactName,
+                // Raw company_name cell, used in the subject.
+                company: companyName,
+                companyName: companyName || contactName,
+                // Reused by the Automation card header and Status logs.
+                projectName: companyName || contactName || email,
+                directorName: contactName,
+              })
+            })
+          })
+        })
+
+        if (!foundEmailColumn) {
+          reject(new Error('No "contact_email" column found in the uploaded file.'))
+          return
+        }
+        if (!foundNameColumn) {
+          reject(new Error('No "contact_name" column found in the uploaded file.'))
+          return
+        }
+        resolve(records)
+      } catch (error) {
+        reject(error)
+      }
+    }
+
+    reader.onerror = () => reject(toReadError(reader.error, file))
+    reader.readAsArrayBuffer(file)
+  })
+
 // ---------- NBFC follow-up (bulk send, fixed template) ----------
 
 const FOLLOW_UP_EMAIL_HEADER = /^e[-\s]?mail/i

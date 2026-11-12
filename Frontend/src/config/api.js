@@ -1,4 +1,5 @@
 import {
+  buildDcAdvisorsText,
   buildHousingFinanceText,
   buildIntelligenceEmail,
   buildIntelligenceFollowUpText,
@@ -84,6 +85,8 @@ const generateTemplatedEmail = async (record) => {
   if (record.mode === 'intelligenceFollowUp') return buildIntelligenceFollowUpText(record.companyName, record.thread)
   // Housing Finance uses a fixed template; the company name goes in exactly as written in the sheet.
   if (record.mode === 'housing') return buildHousingFinanceText(record.companyName)
+  // DC Advisors: fixed template; subject from company_name, greeting from contact_name.
+  if (record.mode === 'dcAdvisors') return buildDcAdvisorsText(record)
   const output = await generateEmailContent(record.prompt)
   if (record.mode === 'nbfc') return shortenFirmNameInBody(buildNbfcEmail(record, output))
   if (record.mode === 'intelligence') return shortenFirmNameInBody(buildIntelligenceEmail(record, output))

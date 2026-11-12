@@ -38,6 +38,30 @@ const transporter = nodemailer.createTransport({
   },
 })
 
+// DC Advisors log in as DC_EMAIL_USER (the primary account) and send as its alias DC_EMAIL_FROM.
+// Gmail only keeps the alias in "From" if it is added under the primary account's Settings > Accounts > "Send mail as".
+const dcTransporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.DC_EMAIL_USER,
+    pass: process.env.DC_EMAIL_PASS,
+  },
+})
+
+// Picks the sending mailbox for an email type; `missing` names the env vars when it isn't configured.
+const mailboxFor = (type) =>
+  type === 'dcAdvisors'
+    ? {
+        transporter: dcTransporter,
+        user: process.env.DC_EMAIL_FROM || process.env.DC_EMAIL_USER,
+        missing: !process.env.DC_EMAIL_USER || !process.env.DC_EMAIL_PASS ? 'DC_EMAIL_USER/DC_EMAIL_PASS' : null,
+      }
+    : {
+        transporter,
+        user: process.env.EMAIL_USER,
+        missing: !process.env.EMAIL_USER || !process.env.EMAIL_PASS ? 'EMAIL_USER/EMAIL_PASS' : null,
+      }
+
 // Gmail's practical daily send cap for a single account.
 const DAILY_EMAIL_CAP = 250
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000
@@ -48,7 +72,7 @@ const startOfTodayIST = () => {
   return new Date(now - (now % (24 * 60 * 60 * 1000)) - IST_OFFSET_MS)
 }
 
-const EMAIL_TYPES = ['realEstate', 'nbfc', 'nbfcFollowUp', 'intelligence', 'intelligenceFollowUp', 'housing']
+const EMAIL_TYPES = ['realEstate', 'nbfc', 'nbfcFollowUp', 'intelligence', 'intelligenceFollowUp', 'housing', 'dcAdvisors']
 
 // email_send_log gained columns for the Status history; add them once if this database predates them.
 const HISTORY_COLUMNS = {
@@ -441,13 +465,14 @@ app.post('/api/send-email', async (req, res) => {
     return res.status(400).json({ error: '"to" and "text" are required.' })
   }
 
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    return res.status(500).json({ error: 'EMAIL_USER/EMAIL_PASS are not configured on the server.' })
+  const mailbox = mailboxFor(meta.type)
+  if (mailbox.missing) {
+    return res.status(500).json({ error: `${mailbox.missing} are not configured on the server.` })
   }
 
   try {
-    const info = await transporter.sendMail({
-      from: `"Express Rupya Capital Advisors" <${process.env.EMAIL_USER}>`,
+    const info = await mailbox.transporter.sendMail({
+      from: `"Express Rupya Capital Advisors" <${mailbox.user}>`,
       to,
       subject: subject || 'Regarding your project',
       text,

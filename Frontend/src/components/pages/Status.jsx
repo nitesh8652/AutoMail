@@ -10,6 +10,7 @@ const TYPE_LABELS = {
   intelligenceFollowUp: 'Intelligence follow-up',
   housing: 'Housing Finance',
   realEstate: 'Real Estate',
+  dcAdvisors: 'DC Advisors',
   other: 'Other',
 }
 
@@ -20,6 +21,7 @@ const TYPE_STYLES = {
   intelligenceFollowUp: 'bg-fuchsia-100 text-fuchsia-700',
   housing: 'bg-emerald-100 text-emerald-700',
   realEstate: 'bg-indigo-100 text-indigo-700',
+  dcAdvisors: 'bg-cyan-100 text-cyan-700',
   other: 'bg-slate-100 text-slate-600',
 }
 
