@@ -442,6 +442,7 @@ const Automation = () => {
 
     const logs = []
     let cancelled = false
+    let capMessage = null
 
     for (let i = 0; i < targets.length; i += 1) {
       if (cancelRef.current) {
@@ -482,6 +483,12 @@ const Automation = () => {
         })
       } catch (err) {
         const message = err.message || 'Failed to send email.'
+        // Daily limit hit: nothing was sent, so stop here and leave this and the rest unsent.
+        if (err.code === 'DAILY_CAP_REACHED') {
+          capMessage = message
+          cancelled = true
+          break
+        }
         recordIntelligenceSend(project, { subject, body }, 'failed', message)
         const timestamp = new Date().toISOString()
         setProjects((prev) =>
@@ -498,6 +505,8 @@ const Automation = () => {
       }
 
       setSentCount(i + 1)
+      // Keep the footer's daily count live while a batch is running.
+      window.dispatchEvent(new Event('emailStatusLogsUpdated'))
 
       // Space sends 3s apart so the mailbox doesn't rate-limit/flag us as spam.
       if (i < targets.length - 1) {
@@ -513,7 +522,8 @@ const Automation = () => {
     setSending(false)
 
     if (cancelled) {
-      setCancelSummary({ sent: logs.length, total: targets.length })
+      const sentOk = logs.filter((log) => log.status === 'received').length
+      setCancelSummary({ sent: sentOk, total: targets.length, capMessage })
       setShowCancelled(true)
     } else {
       const sentOk = logs.filter((log) => log.status === 'received').length
@@ -592,10 +602,14 @@ const Automation = () => {
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="mx-4 flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl bg-white p-8 text-center shadow-2xl">
             <XCircle className="h-12 w-12 text-red-500" strokeWidth={1.8} />
-            <h2 className="text-lg font-extrabold text-slate-800">Sending cancelled</h2>
+            <h2 className="text-lg font-extrabold text-slate-800">
+              {cancelSummary.capMessage ? 'Daily limit reached' : 'Sending cancelled'}
+            </h2>
             <p className="text-sm text-slate-500">
-              {cancelSummary.sent} of {cancelSummary.total} email{cancelSummary.total > 1 ? 's' : ''} were sent before cancelling.
+              {cancelSummary.sent} of {cancelSummary.total} email{cancelSummary.total > 1 ? 's' : ''} were sent before{' '}
+              {cancelSummary.capMessage ? 'the limit was reached' : 'cancelling'}.
             </p>
+            {cancelSummary.capMessage && <p className="text-xs text-red-500">{cancelSummary.capMessage}</p>}
             <button
               type="button"
               onClick={handleCancelledClose}

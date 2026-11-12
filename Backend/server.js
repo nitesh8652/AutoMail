@@ -52,18 +52,21 @@ const dcTransporter = nodemailer.createTransport({
 const mailboxFor = (type) =>
   type === 'dcAdvisors'
     ? {
+        key: 'dc',
         transporter: dcTransporter,
         user: process.env.DC_EMAIL_FROM || process.env.DC_EMAIL_USER,
         missing: !process.env.DC_EMAIL_USER || !process.env.DC_EMAIL_PASS ? 'DC_EMAIL_USER/DC_EMAIL_PASS' : null,
       }
     : {
+        key: 'main',
         transporter,
         user: process.env.EMAIL_USER,
         missing: !process.env.EMAIL_USER || !process.env.EMAIL_PASS ? 'EMAIL_USER/EMAIL_PASS' : null,
       }
 
-// Gmail's practical daily send cap for a single account.
+// Daily send cap per mailbox (Gmail's practical limit for each account). DC Advisors has its own mailbox and cap.
 const DAILY_EMAIL_CAP = 250
+const DC_DAILY_EMAIL_CAP = 500
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000
 
 // Midnight India time, so "today" doesn't depend on the server's timezone.
@@ -181,14 +184,38 @@ app.delete('/api/email-history', async (req, res) => {
   }
 })
 
+// Today's sent/failed counts per mailbox: DC Advisors rows count against the DC mailbox, everything else the main one.
+const MAILBOX_CAPS = { main: DAILY_EMAIL_CAP, dc: DC_DAILY_EMAIL_CAP }
+const countTodayByMailbox = async () => {
+  const [rows] = await pool.query(
+    `SELECT IF(email_type = 'dcAdvisors', 'dc', 'main') AS mailbox,
+            COALESCE(SUM(status = 'sent'), 0) AS sent, COALESCE(SUM(status = 'failed'), 0) AS failed
+     FROM email_send_log WHERE created_at >= ? GROUP BY mailbox`,
+    [startOfTodayIST()]
+  )
+  const counts = { main: { sent: 0, failed: 0 }, dc: { sent: 0, failed: 0 } }
+  rows.forEach((row) => {
+    counts[row.mailbox] = { sent: Number(row.sent), failed: Number(row.failed) }
+  })
+  return counts
+}
+
+// Sends to one mailbox run one at a time, so back-to-back or parallel sends can't slip past the cap together.
+const mailboxQueues = { main: Promise.resolve(), dc: Promise.resolve() }
+const runInMailboxQueue = (key, task) => {
+  const run = mailboxQueues[key].then(task, task)
+  mailboxQueues[key] = run.catch(() => {})
+  return run
+}
+
 app.get('/api/email-stats/today', async (req, res) => {
   try {
-    const [[row]] = await pool.query(
-      `SELECT COALESCE(SUM(status = 'sent'), 0) AS sent, COALESCE(SUM(status = 'failed'), 0) AS failed
-       FROM email_send_log WHERE created_at >= ?`,
-      [startOfTodayIST()]
+    const counts = await countTodayByMailbox()
+    const mailboxes = Object.fromEntries(
+      Object.entries(counts).map(([key, count]) => [key, { ...count, cap: MAILBOX_CAPS[key] }])
     )
-    res.json({ sent: Number(row.sent), failed: Number(row.failed), cap: DAILY_EMAIL_CAP })
+    // Top-level fields describe the main mailbox, for older frontends.
+    res.json({ ...mailboxes.main, mailboxes })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: `Failed to load today's email count — ${error.sqlMessage || error.message}` })
@@ -470,22 +497,43 @@ app.post('/api/send-email', async (req, res) => {
     return res.status(500).json({ error: `${mailbox.missing} are not configured on the server.` })
   }
 
-  try {
-    const info = await mailbox.transporter.sendMail({
-      from: `"Express Rupya Capital Advisors" <${mailbox.user}>`,
-      to,
-      subject: subject || 'Regarding your project',
-      text,
-      inReplyTo,
-      references,
-    })
-    await logSend(to, subject, 'sent', null, meta)
-    res.json({ success: true, messageId: info.messageId })
-  } catch (error) {
-    console.error(error)
-    await logSend(to, subject, 'failed', error.message, meta)
-    res.status(500).json({ error: 'Failed to send email.' })
-  }
+  await runInMailboxQueue(mailbox.key, async () => {
+    // Checked right before sending (inside the queue), so the cap holds however fast the sends arrive.
+    const cap = MAILBOX_CAPS[mailbox.key]
+    let sentToday
+    try {
+      sentToday = (await countTodayByMailbox())[mailbox.key].sent
+    } catch (error) {
+      console.error(error)
+      return res.status(500).json({ error: `Could not check today's send count — ${error.sqlMessage || error.message}` })
+    }
+    if (sentToday >= cap) {
+      return res.status(429).json({
+        code: 'DAILY_CAP_REACHED',
+        error: `Daily limit reached: ${sentToday}/${cap} emails already sent today from ${mailbox.user}. Sending resumes after midnight (IST).`,
+        sent: sentToday,
+        cap,
+      })
+    }
+
+    try {
+      const info = await mailbox.transporter.sendMail({
+        from: `"Express Rupya Capital Advisors" <${mailbox.user}>`,
+        to,
+        subject: subject || 'Regarding your project',
+        text,
+        inReplyTo,
+        references,
+      })
+      // Awaited before the next queued send counts, so the count is always current.
+      await logSend(to, subject, 'sent', null, meta)
+      res.json({ success: true, messageId: info.messageId, sent: sentToday + 1, cap })
+    } catch (error) {
+      console.error(error)
+      await logSend(to, subject, 'failed', error.message, meta)
+      res.status(500).json({ error: 'Failed to send email.' })
+    }
+  })
 })
 
 app.use((req, res, next) => {

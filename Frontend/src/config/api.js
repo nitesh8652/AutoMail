@@ -55,7 +55,10 @@ export const sendEmail = async ({ to, subject, text, meta, inReplyTo, references
     body: JSON.stringify({ to, subject, text, meta, inReplyTo, references }),
   })
   const data = await readJson(response)
-  if (!response.ok) throw new Error(data.error || 'Failed to send email.')
+  if (!response.ok) {
+    // `code` is 'DAILY_CAP_REACHED' when the mailbox has hit today's limit, so the send loop can stop.
+    throw Object.assign(new Error(data.error || 'Failed to send email.'), { code: data.code })
+  }
   return data
 }
 
