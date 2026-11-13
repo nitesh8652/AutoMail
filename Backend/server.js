@@ -55,12 +55,15 @@ const mailboxFor = (type) =>
         key: 'dc',
         transporter: dcTransporter,
         user: process.env.DC_EMAIL_FROM || process.env.DC_EMAIL_USER,
+        // Must be set here: nodemailer's "From" overrides the name configured in Gmail's "Send mail as".
+        name: process.env.DC_EMAIL_FROM_NAME || 'DC Advisory',
         missing: !process.env.DC_EMAIL_USER || !process.env.DC_EMAIL_PASS ? 'DC_EMAIL_USER/DC_EMAIL_PASS' : null,
       }
     : {
         key: 'main',
         transporter,
         user: process.env.EMAIL_USER,
+        name: 'Express Rupya Capital Advisors',
         missing: !process.env.EMAIL_USER || !process.env.EMAIL_PASS ? 'EMAIL_USER/EMAIL_PASS' : null,
       }
 
@@ -518,7 +521,7 @@ app.post('/api/send-email', async (req, res) => {
 
     try {
       const info = await mailbox.transporter.sendMail({
-        from: `"Express Rupya Capital Advisors" <${mailbox.user}>`,
+        from: { name: mailbox.name, address: mailbox.user },
         to,
         subject: subject || 'Regarding your project',
         text,
