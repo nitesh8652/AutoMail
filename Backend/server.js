@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
@@ -52,8 +52,8 @@ const dcTransporter = nodemailer.createTransport({
 const warehouseTransporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.WAREHOUSE_EMAIL_USER,
-    pass: process.env.WAREHOUSE_EMAIL_PASS,
+    user: process.env.DEBTDESK_EMAIL_USER,
+    pass: process.env.DEBTDESK_EMAIL_PASS,
   },
 })
 
@@ -73,11 +73,11 @@ const mailboxFor = (type) => {
     return {
       key: 'warehouse',
       transporter: warehouseTransporter,
-      user: process.env.WAREHOUSE_EMAIL_USER,
-      name: process.env.WAREHOUSE_EMAIL_FROM_NAME || 'Express Rupya Capital Advisors',
+      user: process.env.DEBTDESK_EMAIL_USER,
+      name: process.env.DEBTDESK_EMAIL_FROM_NAME || 'Express Rupya Capital Advisors',
       missing:
-        !process.env.WAREHOUSE_EMAIL_USER || !process.env.WAREHOUSE_EMAIL_PASS
-          ? 'WAREHOUSE_EMAIL_USER/WAREHOUSE_EMAIL_PASS'
+        !process.env.DEBTDESK_EMAIL_USER || !process.env.DEBTDESK_EMAIL_PASS
+          ? 'DEBTDESK_EMAIL_USER/DEBTDESK_EMAIL_PASS'
           : null,
     }
   }
