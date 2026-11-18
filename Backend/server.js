@@ -48,14 +48,17 @@ const dcTransporter = nodemailer.createTransport({
   },
 })
 
-// Warehouse outreach sends from the Debt Desk mailbox.
-const warehouseTransporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.DEBTDESK_EMAIL_USER,
-    pass: process.env.DEBTDESK_EMAIL_PASS,
-  },
-})
+// Warehouse outreach sends from the Debt Desk mailbox: DEBTDESK_EMAIL_USER/PASS when set, otherwise the main
+// EMAIL_USER/PASS login if that is already Debt Desk (as on production) — never any other mailbox.
+const DEBTDESK_ADDRESS = 'debtdesk@expressrupya.co.in'
+const isDebtDesk = (address) => String(address ?? '').trim().toLowerCase() === DEBTDESK_ADDRESS
+const debtDeskLogin =
+  process.env.DEBTDESK_EMAIL_USER && process.env.DEBTDESK_EMAIL_PASS
+    ? { user: process.env.DEBTDESK_EMAIL_USER, pass: process.env.DEBTDESK_EMAIL_PASS }
+    : isDebtDesk(process.env.EMAIL_USER) && process.env.EMAIL_PASS
+      ? { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+      : null
+const warehouseTransporter = nodemailer.createTransport({ service: 'gmail', auth: debtDeskLogin ?? {} })
 
 // Picks the sending mailbox for an email type; `missing` names the env vars when it isn't configured.
 const mailboxFor = (type) => {
@@ -73,12 +76,9 @@ const mailboxFor = (type) => {
     return {
       key: 'warehouse',
       transporter: warehouseTransporter,
-      user: process.env.DEBTDESK_EMAIL_USER,
+      user: debtDeskLogin?.user,
       name: process.env.DEBTDESK_EMAIL_FROM_NAME || 'Express Rupya Capital Advisors',
-      missing:
-        !process.env.DEBTDESK_EMAIL_USER || !process.env.DEBTDESK_EMAIL_PASS
-          ? 'DEBTDESK_EMAIL_USER/DEBTDESK_EMAIL_PASS'
-          : null,
+      missing: debtDeskLogin ? null : `DEBTDESK_EMAIL_USER/DEBTDESK_EMAIL_PASS (or EMAIL_USER=${DEBTDESK_ADDRESS})`,
     }
   }
   return {
