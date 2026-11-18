@@ -48,28 +48,52 @@ const dcTransporter = nodemailer.createTransport({
   },
 })
 
-// Picks the sending mailbox for an email type; `missing` names the env vars when it isn't configured.
-const mailboxFor = (type) =>
-  type === 'dcAdvisors'
-    ? {
-        key: 'dc',
-        transporter: dcTransporter,
-        user: process.env.DC_EMAIL_FROM || process.env.DC_EMAIL_USER,
-        // Must be set here: nodemailer's "From" overrides the name configured in Gmail's "Send mail as".
-        name: process.env.DC_EMAIL_FROM_NAME || 'DC Advisory',
-        missing: !process.env.DC_EMAIL_USER || !process.env.DC_EMAIL_PASS ? 'DC_EMAIL_USER/DC_EMAIL_PASS' : null,
-      }
-    : {
-        key: 'main',
-        transporter,
-        user: process.env.EMAIL_USER,
-        name: 'Express Rupya Capital Advisors',
-        missing: !process.env.EMAIL_USER || !process.env.EMAIL_PASS ? 'EMAIL_USER/EMAIL_PASS' : null,
-      }
+// Warehouse outreach sends from the Debt Desk mailbox.
+const warehouseTransporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.WAREHOUSE_EMAIL_USER,
+    pass: process.env.WAREHOUSE_EMAIL_PASS,
+  },
+})
 
-// Daily send cap per mailbox (Gmail's practical limit for each account). DC Advisors has its own mailbox and cap.
+// Picks the sending mailbox for an email type; `missing` names the env vars when it isn't configured.
+const mailboxFor = (type) => {
+  if (type === 'dcAdvisors') {
+    return {
+      key: 'dc',
+      transporter: dcTransporter,
+      user: process.env.DC_EMAIL_FROM || process.env.DC_EMAIL_USER,
+      // Must be set here: nodemailer's "From" overrides the name configured in Gmail's "Send mail as".
+      name: process.env.DC_EMAIL_FROM_NAME || 'DC Advisory',
+      missing: !process.env.DC_EMAIL_USER || !process.env.DC_EMAIL_PASS ? 'DC_EMAIL_USER/DC_EMAIL_PASS' : null,
+    }
+  }
+  if (type === 'warehouse') {
+    return {
+      key: 'warehouse',
+      transporter: warehouseTransporter,
+      user: process.env.WAREHOUSE_EMAIL_USER,
+      name: process.env.WAREHOUSE_EMAIL_FROM_NAME || 'Express Rupya Capital Advisors',
+      missing:
+        !process.env.WAREHOUSE_EMAIL_USER || !process.env.WAREHOUSE_EMAIL_PASS
+          ? 'WAREHOUSE_EMAIL_USER/WAREHOUSE_EMAIL_PASS'
+          : null,
+    }
+  }
+  return {
+    key: 'main',
+    transporter,
+    user: process.env.EMAIL_USER,
+    name: 'Express Rupya Capital Advisors',
+    missing: !process.env.EMAIL_USER || !process.env.EMAIL_PASS ? 'EMAIL_USER/EMAIL_PASS' : null,
+  }
+}
+
+// Daily send cap per mailbox (Gmail's practical limit for each account). DC Advisors and Warehouse have their own mailboxes and caps.
 const DAILY_EMAIL_CAP = 250
 const DC_DAILY_EMAIL_CAP = 500
+const WAREHOUSE_DAILY_EMAIL_CAP = 500
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000
 
 // Midnight India time, so "today" doesn't depend on the server's timezone.
@@ -78,7 +102,7 @@ const startOfTodayIST = () => {
   return new Date(now - (now % (24 * 60 * 60 * 1000)) - IST_OFFSET_MS)
 }
 
-const EMAIL_TYPES = ['realEstate', 'nbfc', 'nbfcFollowUp', 'intelligence', 'intelligenceFollowUp', 'housing', 'dcAdvisors']
+const EMAIL_TYPES = ['realEstate', 'nbfc', 'nbfcFollowUp', 'intelligence', 'intelligenceFollowUp', 'housing', 'dcAdvisors', 'warehouse']
 
 // email_send_log gained columns for the Status history; add them once if this database predates them.
 const HISTORY_COLUMNS = {
@@ -133,6 +157,7 @@ const SUBJECT_TYPES = [
   { pattern: /^Following up\s+[–-]\s+(.+)$/i, type: 'nbfcFollowUp' },
   { pattern: /^Fund Raising-\s*(.+)$/i, type: 'housing' },
   { pattern: /^Funding Requirement\s+[–-]\s+(.+)$/i, type: 'intelligence' },
+  { pattern: /^(.+?)\s+-\s+Strategic Warehousing/i, type: 'warehouse' },
 ]
 const fromSubject = (subject) => {
   for (const { pattern, type } of SUBJECT_TYPES) {
@@ -187,16 +212,16 @@ app.delete('/api/email-history', async (req, res) => {
   }
 })
 
-// Today's sent/failed counts per mailbox: DC Advisors rows count against the DC mailbox, everything else the main one.
-const MAILBOX_CAPS = { main: DAILY_EMAIL_CAP, dc: DC_DAILY_EMAIL_CAP }
+// Today's sent/failed counts per mailbox: DC Advisors and Warehouse rows count against their own mailboxes, everything else the main one.
+const MAILBOX_CAPS = { main: DAILY_EMAIL_CAP, dc: DC_DAILY_EMAIL_CAP, warehouse: WAREHOUSE_DAILY_EMAIL_CAP }
 const countTodayByMailbox = async () => {
   const [rows] = await pool.query(
-    `SELECT IF(email_type = 'dcAdvisors', 'dc', 'main') AS mailbox,
+    `SELECT CASE email_type WHEN 'dcAdvisors' THEN 'dc' WHEN 'warehouse' THEN 'warehouse' ELSE 'main' END AS mailbox,
             COALESCE(SUM(status = 'sent'), 0) AS sent, COALESCE(SUM(status = 'failed'), 0) AS failed
      FROM email_send_log WHERE created_at >= ? GROUP BY mailbox`,
     [startOfTodayIST()]
   )
-  const counts = { main: { sent: 0, failed: 0 }, dc: { sent: 0, failed: 0 } }
+  const counts = { main: { sent: 0, failed: 0 }, dc: { sent: 0, failed: 0 }, warehouse: { sent: 0, failed: 0 } }
   rows.forEach((row) => {
     counts[row.mailbox] = { sent: Number(row.sent), failed: Number(row.failed) }
   })
@@ -204,7 +229,7 @@ const countTodayByMailbox = async () => {
 }
 
 // Sends to one mailbox run one at a time, so back-to-back or parallel sends can't slip past the cap together.
-const mailboxQueues = { main: Promise.resolve(), dc: Promise.resolve() }
+const mailboxQueues = { main: Promise.resolve(), dc: Promise.resolve(), warehouse: Promise.resolve() }
 const runInMailboxQueue = (key, task) => {
   const run = mailboxQueues[key].then(task, task)
   mailboxQueues[key] = run.catch(() => {})
@@ -223,6 +248,17 @@ app.get('/api/email-stats/today', async (req, res) => {
     console.error(error)
     res.status(500).json({ error: `Failed to load today's email count — ${error.sqlMessage || error.message}` })
   }
+})
+
+// The "From" of each mailbox, so the upload page can say which address the emails go out from.
+app.get('/api/senders', (req, res) => {
+  const senders = Object.fromEntries(
+    ['realEstate', 'dcAdvisors', 'warehouse'].map((type) => {
+      const { key, user, name, missing } = mailboxFor(type)
+      return [key, missing ? null : { name, address: user }]
+    })
+  )
+  res.json({ senders })
 })
 
 app.get('/', (req, res) => {

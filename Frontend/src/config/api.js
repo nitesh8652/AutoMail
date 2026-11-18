@@ -5,6 +5,7 @@ import {
   buildIntelligenceFollowUpText,
   buildNbfcEmail,
   buildNbfcFollowUpText,
+  buildWarehouseText,
 } from './Xlsx'
 import { API_BASE } from './env'
 
@@ -90,6 +91,8 @@ const generateTemplatedEmail = async (record) => {
   if (record.mode === 'housing') return buildHousingFinanceText(record.companyName)
   // DC Advisors: fixed template; subject from company_name, greeting from contact_name.
   if (record.mode === 'dcAdvisors') return buildDcAdvisorsText(record)
+  // Warehouse: fixed template; subject from Company Name, greeting from Director Name.
+  if (record.mode === 'warehouse') return buildWarehouseText(record)
   const output = await generateEmailContent(record.prompt)
   if (record.mode === 'nbfc') return shortenFirmNameInBody(buildNbfcEmail(record, output))
   if (record.mode === 'intelligence') return shortenFirmNameInBody(buildIntelligenceEmail(record, output))
@@ -179,6 +182,10 @@ export const fetchFollowUpThreads = async (emails) => {
 
 export const clearEmailHistory = () =>
   requestJson('/api/email-history', { method: 'DELETE' }, 'Failed to clear the email history.')
+
+// The "From" name and address of each mailbox ({ main, dc, warehouse }), as configured on the server.
+export const fetchSenders = async () =>
+  (await requestJson('/api/senders', undefined, 'Failed to load the sending addresses.')).senders
 
 // Shared across devices: counted by the server from every email it sends.
 export const fetchTodayEmailStats = () =>

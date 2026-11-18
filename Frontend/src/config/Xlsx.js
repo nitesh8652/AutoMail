@@ -251,8 +251,9 @@ export const buildDcAdvisorsText = ({ company, contactName }) =>
   `+91 84540 38196\n` +
   `www.expressrupya.com`
 
-// Sheet needs contact_email and contact_name columns; company_name (for the subject) is optional.
-export const extractDcAdvisorsFromFile = (file, { validateEmail = true } = {}) =>
+// Reads a sheet with email + contact name columns (company name optional) into records for `mode`.
+// `columns` names the headers in error messages.
+const extractContactsFromFile = (file, { validateEmail = true } = {}, mode, columns) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader()
 
@@ -295,7 +296,7 @@ export const extractDcAdvisorsFromFile = (file, { validateEmail = true } = {}) =
               if (validateEmail && !EMAIL_PATTERN.test(email)) return
               const contactName = contactNames[index] ?? contactNames[0] ?? ''
               records.push({
-                mode: 'dcAdvisors',
+                mode,
                 email,
                 contactName,
                 // Raw company_name cell, used in the subject.
@@ -310,11 +311,11 @@ export const extractDcAdvisorsFromFile = (file, { validateEmail = true } = {}) =
         })
 
         if (!foundEmailColumn) {
-          reject(new Error('No "contact_email" column found in the uploaded file.'))
+          reject(new Error(`No "${columns.email}" column found in the uploaded file.`))
           return
         }
         if (!foundNameColumn) {
-          reject(new Error('No "contact_name" column found in the uploaded file.'))
+          reject(new Error(`No "${columns.contactName}" column found in the uploaded file.`))
           return
         }
         resolve(records)
@@ -326,6 +327,49 @@ export const extractDcAdvisorsFromFile = (file, { validateEmail = true } = {}) =
     reader.onerror = () => reject(toReadError(reader.error, file))
     reader.readAsArrayBuffer(file)
   })
+
+// Sheet needs contact_email and contact_name columns; company_name (for the subject) is optional.
+export const extractDcAdvisorsFromFile = (file, options) =>
+  extractContactsFromFile(file, options, 'dcAdvisors', { email: 'contact_email', contactName: 'contact_name' })
+
+// ---------- Warehouse (Hyderabad warehousing & logistics park, fixed template, sent from Debt Desk) ----------
+
+const WAREHOUSE_SUBJECT_SUFFIX =
+  'Strategic Warehousing & Rail-Linked Logistics Opportunity – Hyderabad, Telangana'
+
+// "<Company Name> - Strategic Warehousing ..."; just the suffix when the company cell is empty.
+export const buildWarehouseSubject = (company) => {
+  const name = String(company ?? '').trim().replace(/\s+/g, ' ')
+  return name ? `${name} - ${WAREHOUSE_SUBJECT_SUFFIX}` : WAREHOUSE_SUBJECT_SUFFIX
+}
+
+// Subject uses the Company Name column; the greeting uses Director Name.
+export const buildWarehouseText = ({ company, contactName }) =>
+  `Subject: ${buildWarehouseSubject(company)}\n\n` +
+  `Dear ${toDcGreetingName(contactName) || 'Sir/Madam'},\n\n` +
+  `Greetings from Express Rupya Capital Advisors!\n\n` +
+  `We are pleased to announce the soft launch of an Integrated Warehousing, Logistics & Industrial Park on the Hyderabad–Vijayawada Highway, Telangana, offering:\n` +
+  `- Covered Warehousing & Dry Storage – For commodities, FMCG and industrial goods.\n` +
+  `- Cold Storage – For temperature-sensitive products.\n` +
+  `- Operational Railway Siding – Handling approximately 25,000 MT per month.\n` +
+  `- Proposed ICD & Customs Clearance – Subject to approvals and commissioning.\n` +
+  `- Weighbridge Facilities – For incoming and outgoing cargo.\n` +
+  `- Logistics Support – Handling, loading, unloading, transportation and distribution.\n` +
+  `- Industrial & Manufacturing Space – For factories and processing units.\n` +
+  `- Green Energy Infrastructure – Solar installations supporting sustainable operations.\n\n` +
+  `The park brings manufacturing, storage and distribution together, with potential onward rail movement to JNPT, subject to service availability.\n` +
+  `Rail connectivity also offers an alternative during road transport disruptions, potentially supporting raw-material receipts and finished-goods dispatch during truck strikes or bottlenecks.\n\n` +
+  `As part of the soft launch, we invite companies to explore warehousing, industrial land leasing, outright land purchase and Built-to-Suit options tailored to their requirements.\n\n` +
+  `Would you be available for a brief discussion or site visit?\n\n` +
+  `Best regards,\n` +
+  `Sushant Dalvi\n` +
+  `Express Rupya Capital Advisors\n` +
+  `+91 84540 38196 | www.expressrupya.com\n` +
+  `Your partner for growth !`
+
+// Sheet needs Company Name, Director Name and Email id columns (any position).
+export const extractWarehouseFromFile = (file, options) =>
+  extractContactsFromFile(file, options, 'warehouse', { email: 'Email id', contactName: 'Director Name' })
 
 // ---------- NBFC follow-up (bulk send, fixed template) ----------
 

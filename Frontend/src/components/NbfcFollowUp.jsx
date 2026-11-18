@@ -11,6 +11,7 @@ import {
 } from '../config/Xlsx'
 import { fetchFollowUpThreads } from '../config/api'
 import { safeSetItem } from '../config/storage'
+import SheetGuide from './SheetGuide'
 
 const SENDER_STORAGE_KEY = 'nbfcFollowUpSender'
 
@@ -158,6 +159,7 @@ const NbfcFollowUp = ({ variant = 'nbfc' }) => {
         </button>
 
         <input ref={inputRef} className="sr-only" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { selectFile(event.target.files[0]); event.target.value = '' }} />
+        <SheetGuide sheets={[{ required: ['Company Name', 'Email'] }]} mailbox="main" />
 
         <button
           className="mt-[14px] flex h-[52px] w-full items-center justify-center gap-2.5 rounded-xl border-0 bg-[#1070BA] font-bold text-white shadow-[0_10px_22px_rgba(16,112,186,0.22)] transition hover:-translate-y-px hover:bg-[#0c609f] disabled:cursor-not-allowed disabled:bg-[#e9eff3] disabled:text-[#94a5b2] disabled:shadow-none disabled:hover:translate-y-0"

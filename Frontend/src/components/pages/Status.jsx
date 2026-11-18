@@ -11,6 +11,7 @@ const TYPE_LABELS = {
   housing: 'Housing Finance',
   realEstate: 'Real Estate',
   dcAdvisors: 'DC Advisors',
+  warehouse: 'Warehouse',
   other: 'Other',
 }
 
@@ -22,6 +23,7 @@ const TYPE_STYLES = {
   housing: 'bg-emerald-100 text-emerald-700',
   realEstate: 'bg-indigo-100 text-indigo-700',
   dcAdvisors: 'bg-cyan-100 text-cyan-700',
+  warehouse: 'bg-orange-100 text-orange-700',
   other: 'bg-slate-100 text-slate-600',
 }
 

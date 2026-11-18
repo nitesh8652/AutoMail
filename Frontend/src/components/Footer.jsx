@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Send } from 'lucide-react'
 import { fetchTodayEmailStats } from '../config/api'
-import { useMode } from '../config/mode'
+import { mailboxForMode, useMode } from '../config/mode'
 
 // Fallbacks until the server replies; the server's caps are the source of truth.
-// DC Advisors sends from its own mailbox, so it has its own count and cap.
-const DEFAULT_CAPS = { main: 250, dc: 500 }
+// DC Advisors and Warehouse send from their own mailboxes, so each has its own count and cap.
+const DEFAULT_CAPS = { main: 250, dc: 500, warehouse: 500 }
+const MAILBOX_LABELS = { dc: ' · DC Advisors', warehouse: ' · Warehouse' }
 // How often other devices pick up sends made elsewhere.
 const POLL_MS = 15000
 
 const Footer = () => {
   const { mode } = useMode()
-  const mailbox = mode === 'dcAdvisors' ? 'dc' : 'main'
+  const mailbox = mailboxForMode(mode)
   const [stats, setStats] = useState(null)
 
   useEffect(() => {
@@ -51,7 +52,7 @@ const Footer = () => {
       <div className="mx-auto flex h-8 w-[calc(100%-2rem)] max-w-[1180px] items-center gap-3 sm:w-[calc(100%-3rem)]">
         <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-semibold text-[#536779]">
           <Send className="h-3 w-3 text-[#1070BA]" strokeWidth={2} aria-hidden="true" />
-          Today{mailbox === 'dc' ? ' · DC Advisors' : ''}
+          Today{MAILBOX_LABELS[mailbox] ?? ''}
         </span>
         <div
           className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#e3edf4]"

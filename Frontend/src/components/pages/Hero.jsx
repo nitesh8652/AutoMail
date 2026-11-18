@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, ChevronRight, Database, LockKeyhole, Upload } from 'lucide-react'
-import { extractDcAdvisorsFromFile, extractHousingFromFile, extractNbfcFromFile, extractRealEstateFromFile, readIntelligenceFiles } from '../../config/Xlsx'
+import { extractDcAdvisorsFromFile, extractHousingFromFile, extractNbfcFromFile, extractRealEstateFromFile, extractWarehouseFromFile, readIntelligenceFiles } from '../../config/Xlsx'
 import { uploadIntelligenceData } from '../../config/api'
 import { LAST_SCAN_STORAGE_KEY, safeSetItem } from '../../config/storage'
 import { MODES, useMode } from '../../config/mode'
 import NbfcFollowUp from '../NbfcFollowUp'
+import SheetGuide from '../SheetGuide'
 import { MiLoaderOverlay } from '../MiLoader'
 
 const INTELLIGENCE_FILES = [
@@ -54,8 +55,7 @@ const Hero = () => {
   const { mode } = useMode()
   const [intelFiles, setIntelFiles] = useState({ contacts: null, values: null })
   const isIntelligence = mode === 'intelligence'
-  const isRealEstate = mode === 'realEstate'
-  const { label: modeLabel, Icon: ModeIcon } = MODES.find(({ key }) => key === mode)
+  const { label: modeLabel, Icon: ModeIcon, sheets: modeSheets, mailbox: modeMailbox } = MODES.find(({ key }) => key === mode)
   const ready = isIntelligence ? Boolean(intelFiles.contacts && intelFiles.values) : Boolean(file)
 
   const selectFile = (selectedFile) => {
@@ -87,7 +87,7 @@ const Hero = () => {
         navigate('/intelligence')
         return
       }
-      const extract = { realEstate: extractRealEstateFromFile, nbfc: extractNbfcFromFile, housing: extractHousingFromFile, dcAdvisors: extractDcAdvisorsFromFile }[mode]
+      const extract = { realEstate: extractRealEstateFromFile, nbfc: extractNbfcFromFile, housing: extractHousingFromFile, dcAdvisors: extractDcAdvisorsFromFile, warehouse: extractWarehouseFromFile }[mode]
       const projects = await extract(file, { validateEmail })
       if (projects.length === 0) throw new Error('No rows with a company name and a valid email were found in the file.')
       safeSetItem('fetchedProjects', projects)
@@ -194,18 +194,9 @@ const Hero = () => {
           </button>
 
           <input ref={inputRef} className="sr-only" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { selectFile(event.target.files[0]); event.target.value = '' }} />
-          {isRealEstate && (
-            <p className="mt-2 text-center text-[11px] text-[#7c8e9e]">
-              Sheet needs <strong>Company Name</strong>, <strong>Email</strong> and <strong>Website</strong> columns.
-            </p>
-          )}
-          {mode === 'dcAdvisors' && (
-            <p className="mt-2 text-center text-[11px] text-[#7c8e9e]">
-              Sheet needs <strong>company_name</strong>, <strong>contact_name</strong> and <strong>contact_email</strong> columns (any position).
-            </p>
-          )}
           </>
         )}
+        <SheetGuide sheets={modeSheets} mailbox={modeMailbox} />
 
         <label className="mt-[18px] flex cursor-pointer items-center gap-2.5 text-[13px] text-[#476072]">
           <input
