@@ -63,7 +63,7 @@ const WarehouseFollowUps = () => {
             <h2 className="font-heading text-[22px] font-bold tracking-[-0.02em] text-[#102a43]">Automatic follow-ups</h2>
             <p className="mt-1 text-[13px] text-[#7c8e9e]">
               Every Warehouse email gets {data?.maxFollowUps ?? 4} follow-ups, one every {data?.intervalDays ?? 10} days, as a reply in the same
-              thread with <strong>{data?.cc ?? 'himanshu@expressrupya.com'}</strong> in CC. They stop automatically if the person replies.
+              thread with <strong>{data?.cc ?? 'himanshu@expressrupya.co.in'}</strong> in CC. They stop automatically if the person replies.
             </p>
           </div>
           <button

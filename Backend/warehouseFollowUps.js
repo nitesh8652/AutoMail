@@ -5,7 +5,7 @@ const { findRepliesFrom } = require('./followupThreads')
 // as replies in the same Gmail thread with Himanshu in CC. They stop early if the recipient replies.
 const FOLLOW_UP_INTERVAL_DAYS = 10
 const MAX_FOLLOW_UPS = 4
-const FOLLOW_UP_CC = process.env.WAREHOUSE_FOLLOW_UP_CC || 'himanshu@expressrupya.com'
+const FOLLOW_UP_CC = process.env.WAREHOUSE_FOLLOW_UP_CC || 'himanshu@expressrupya.co.in'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const CHECK_EVERY_MS = 15 * 60 * 1000
