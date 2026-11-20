@@ -5,6 +5,7 @@ const cors = require('cors');
 const nodemailer = require('nodemailer');
 const intelRoutes = require('./routes/intel');
 const { findLastSentTo } = require('./followupThreads');
+const { createWarehouseFollowUps, WAREHOUSE_CC } = require('./warehouseFollowUps');
 const { fetchWebsite } = require('./linkContent');
 const pool = require('./db');
 const { PORT } = require('./config');
@@ -102,7 +103,7 @@ const startOfTodayIST = () => {
   return new Date(now - (now % (24 * 60 * 60 * 1000)) - IST_OFFSET_MS)
 }
 
-const EMAIL_TYPES = ['realEstate', 'nbfc', 'nbfcFollowUp', 'intelligence', 'intelligenceFollowUp', 'housing', 'dcAdvisors', 'warehouse']
+const EMAIL_TYPES = ['realEstate', 'nbfc', 'nbfcFollowUp', 'intelligence', 'intelligenceFollowUp', 'housing', 'dcAdvisors', 'warehouse', 'warehouseFollowUp']
 
 // email_send_log gained columns for the Status history; add them once if this database predates them.
 const HISTORY_COLUMNS = {
@@ -216,7 +217,8 @@ app.delete('/api/email-history', async (req, res) => {
 const MAILBOX_CAPS = { main: DAILY_EMAIL_CAP, dc: DC_DAILY_EMAIL_CAP, warehouse: WAREHOUSE_DAILY_EMAIL_CAP }
 const countTodayByMailbox = async () => {
   const [rows] = await pool.query(
-    `SELECT CASE email_type WHEN 'dcAdvisors' THEN 'dc' WHEN 'warehouse' THEN 'warehouse' ELSE 'main' END AS mailbox,
+    `SELECT CASE WHEN email_type = 'dcAdvisors' THEN 'dc'
+                 WHEN email_type IN ('warehouse', 'warehouseFollowUp') THEN 'warehouse' ELSE 'main' END AS mailbox,
             COALESCE(SUM(status = 'sent'), 0) AS sent, COALESCE(SUM(status = 'failed'), 0) AS failed
      FROM email_send_log WHERE created_at >= ? GROUP BY mailbox`,
     [startOfTodayIST()]
@@ -491,6 +493,20 @@ app.post('/api/generate-real-estate-email', async (req, res) => {
   }
 })
 
+// Automatic Warehouse follow-ups (every 10 days, 4 times, CC Himanshu) — see warehouseFollowUps.js.
+const warehouseFollowUps = createWarehouseFollowUps({
+  pool,
+  mailboxFor,
+  imapAuth: () => debtDeskLogin,
+  runInMailboxQueue,
+  countTodayByMailbox,
+  mailboxCaps: MAILBOX_CAPS,
+  logSend,
+  greetingFor,
+})
+app.use('/api/warehouse-followups', warehouseFollowUps.router)
+warehouseFollowUps.start()
+
 const MAX_FOLLOW_UP_LOOKUPS = 500
 
 // Finds the last email sent to each address in Gmail's Sent folder, for threading NBFC follow-ups.
@@ -559,6 +575,8 @@ app.post('/api/send-email', async (req, res) => {
       const info = await mailbox.transporter.sendMail({
         from: { name: mailbox.name, address: mailbox.user },
         to,
+        // Warehouse emails copy Himanshu (the follow-ups do too).
+        ...(meta.type === 'warehouse' && { cc: WAREHOUSE_CC }),
         subject: subject || 'Regarding your project',
         text,
         inReplyTo,
@@ -566,6 +584,12 @@ app.post('/api/send-email', async (req, res) => {
       })
       // Awaited before the next queued send counts, so the count is always current.
       await logSend(to, subject, 'sent', null, meta)
+      // A first Warehouse email starts its automatic follow-up schedule.
+      if (meta.type === 'warehouse' && !inReplyTo) {
+        await warehouseFollowUps
+          .schedule({ to, subject, messageId: info.messageId, companyName: meta.companyName, directorName: meta.directorName })
+          .catch((error) => console.error('Failed to schedule warehouse follow-ups:', error.sqlMessage || error.message))
+      }
       res.json({ success: true, messageId: info.messageId, sent: sentToday + 1, cap })
     } catch (error) {
       console.error(error)

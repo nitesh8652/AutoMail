@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, ChevronRight, Database, LockKeyhole, Upload } from 'lucide-react'
-import { extractDcAdvisorsFromFile, extractHousingFromFile, extractNbfcFromFile, extractRealEstateFromFile, extractWarehouseFromFile, readIntelligenceFiles } from '../../config/Xlsx'
+import { extractDcAdvisorsFromFile, extractHousingFromFile, extractNbfcFromFile, extractRealEstateFromFile, extractWarehouseFromFile, listSheetNames, readIntelligenceFiles } from '../../config/Xlsx'
 import { uploadIntelligenceData } from '../../config/api'
 import { LAST_SCAN_STORAGE_KEY, safeSetItem } from '../../config/storage'
 import { MODES, useMode } from '../../config/mode'
 import NbfcFollowUp from '../NbfcFollowUp'
+import WarehouseFollowUps from '../WarehouseFollowUps'
 import SheetGuide from '../SheetGuide'
 import { MiLoaderOverlay } from '../MiLoader'
 
@@ -52,6 +53,10 @@ const Hero = () => {
   const [uploadProgress, setUploadProgress] = useState(null)
   const [error, setError] = useState(null)
   const [validateEmail, setValidateEmail] = useState(true)
+  // Tabs in the chosen workbook; '' in `sheetName` means every sheet.
+  const [sheetNames, setSheetNames] = useState([])
+  const [sheetName, setSheetName] = useState('')
+  const selectedFileRef = useRef(null)
   const { mode } = useMode()
   const [intelFiles, setIntelFiles] = useState({ contacts: null, values: null })
   const isIntelligence = mode === 'intelligence'
@@ -62,6 +67,13 @@ const Hero = () => {
     if (!selectedFile) return
     setFile(selectedFile)
     setError(null)
+    setSheetNames([])
+    setSheetName('')
+    selectedFileRef.current = selectedFile
+    listSheetNames(selectedFile)
+      // Ignored if another file was picked while this one was being read.
+      .then((names) => selectedFileRef.current === selectedFile && setSheetNames(names))
+      .catch((err) => console.warn('Could not list sheets:', err.message))
   }
   const selectIntelFile = (key, selectedFile) => {
     if (!selectedFile) return
@@ -88,8 +100,10 @@ const Hero = () => {
         return
       }
       const extract = { realEstate: extractRealEstateFromFile, nbfc: extractNbfcFromFile, housing: extractHousingFromFile, dcAdvisors: extractDcAdvisorsFromFile, warehouse: extractWarehouseFromFile }[mode]
-      const projects = await extract(file, { validateEmail })
-      if (projects.length === 0) throw new Error('No rows with a company name and a valid email were found in the file.')
+      const projects = await extract(file, { validateEmail, sheetName })
+      if (projects.length === 0) {
+        throw new Error(`No rows with a company name and a valid email were found in ${sheetName ? `sheet "${sheetName}"` : 'the file'}.`)
+      }
       safeSetItem('fetchedProjects', projects)
       navigate('/fetched', { state: { projects } })
     } catch (err) {
@@ -194,6 +208,22 @@ const Hero = () => {
           </button>
 
           <input ref={inputRef} className="sr-only" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { selectFile(event.target.files[0]); event.target.value = '' }} />
+
+          {sheetNames.length > 1 && (
+            <label className="mt-3 flex items-center gap-2.5 rounded-xl border border-[#e3edf4] bg-[#f7fbfe] px-3.5 py-2.5 text-[13px] text-[#476072]">
+              <span className="shrink-0 text-[11px] font-extrabold tracking-[0.08em] text-[#7c8e9e]">SHEET</span>
+              <select
+                value={sheetName}
+                onChange={(event) => setSheetName(event.target.value)}
+                className="h-9 min-w-0 flex-1 rounded-lg border border-[#d3e4f0] bg-white px-2 text-[13px] font-semibold text-[#102a43] outline-none focus:border-[#1070BA] focus:ring-2 focus:ring-[#1070BA]/15"
+              >
+                <option value="">All sheets ({sheetNames.length})</option>
+                {sheetNames.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </label>
+          )}
           </>
         )}
         <SheetGuide sheets={modeSheets} mailbox={modeMailbox} />
@@ -233,6 +263,7 @@ const Hero = () => {
     </section>
     {mode === 'nbfc' && <NbfcFollowUp />}
     {isIntelligence && <NbfcFollowUp variant="intelligence" />}
+    {mode === 'warehouse' && <WarehouseFollowUps />}
     </>
   )
 }

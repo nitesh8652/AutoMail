@@ -12,6 +12,7 @@ const TYPE_LABELS = {
   realEstate: 'Real Estate',
   dcAdvisors: 'DC Advisors',
   warehouse: 'Warehouse',
+  warehouseFollowUp: 'Warehouse follow-up',
   other: 'Other',
 }
 
@@ -24,6 +25,7 @@ const TYPE_STYLES = {
   realEstate: 'bg-indigo-100 text-indigo-700',
   dcAdvisors: 'bg-cyan-100 text-cyan-700',
   warehouse: 'bg-orange-100 text-orange-700',
+  warehouseFollowUp: 'bg-yellow-100 text-yellow-800',
   other: 'bg-slate-100 text-slate-600',
 }
 

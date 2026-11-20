@@ -8,6 +8,30 @@ const toReadError = (error, file) =>
   error?.name === 'NotFoundError' || error?.name === 'NotReadableError'
     ? new Error(`"${file?.name ?? 'The file'}" changed or was moved after you selected it. Close it in Excel, then select it again.`)
     : error
+// Names of the sheets (tabs) in a workbook, for the "which sheet" picker on the upload page.
+export const listSheetNames = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = async (event) => {
+      try {
+        const XLSX = await loadXlsx()
+        resolve(XLSX.read(event.target.result, { type: 'array', bookSheets: true }).SheetNames)
+      } catch (error) {
+        reject(error)
+      }
+    }
+    reader.onerror = () => reject(toReadError(reader.error, file))
+    reader.readAsArrayBuffer(file)
+  })
+
+// Only the chosen sheet when `sheetName` is set; every sheet otherwise.
+const sheetsToRead = (workbook, sheetName) => {
+  if (!sheetName) return workbook.SheetNames
+  if (!workbook.SheetNames.includes(sheetName)) throw new Error(`Sheet "${sheetName}" was not found in the file.`)
+  return [sheetName]
+}
+const inSheet = (sheetName) => (sheetName ? ` in sheet "${sheetName}"` : ' in the uploaded file')
+
 const splitLines = (value) =>
   String(value ?? '')
     .split(/\r\n|\r|\n/)
@@ -76,7 +100,7 @@ const matchNbfcHeaders = (headers) => {
 }
 
 // NBFC and Housing Finance sheets share the same "Company Name" + "Email" layout.
-const extractCompanyEmailsFromFile = (file, { validateEmail = true } = {}, toRecord) => {
+const extractCompanyEmailsFromFile = (file, { validateEmail = true, sheetName: onlySheet } = {}, toRecord) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
 
@@ -88,7 +112,7 @@ const extractCompanyEmailsFromFile = (file, { validateEmail = true } = {}, toRec
         let foundNameColumn = false
         const records = []
 
-        workbook.SheetNames.forEach((sheetName) => {
+        sheetsToRead(workbook, onlySheet).forEach((sheetName) => {
           const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' })
           if (rows.length === 0) return
 
@@ -114,11 +138,11 @@ const extractCompanyEmailsFromFile = (file, { validateEmail = true } = {}, toRec
         })
 
         if (!foundEmailColumn) {
-          reject(new Error('No "Email" column found in the uploaded file.'))
+          reject(new Error(`No "Email" column found${inSheet(onlySheet)}.`))
           return
         }
         if (!foundNameColumn) {
-          reject(new Error('No "Name" column found in the uploaded file.'))
+          reject(new Error(`No "Name" column found${inSheet(onlySheet)}.`))
           return
         }
 
@@ -253,7 +277,7 @@ export const buildDcAdvisorsText = ({ company, contactName }) =>
 
 // Reads a sheet with email + contact name columns (company name optional) into records for `mode`.
 // `columns` names the headers in error messages.
-const extractContactsFromFile = (file, { validateEmail = true } = {}, mode, columns) =>
+const extractContactsFromFile = (file, { validateEmail = true, sheetName: onlySheet } = {}, mode, columns) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader()
 
@@ -265,7 +289,7 @@ const extractContactsFromFile = (file, { validateEmail = true } = {}, mode, colu
         let foundNameColumn = false
         const records = []
 
-        workbook.SheetNames.forEach((sheetName) => {
+        sheetsToRead(workbook, onlySheet).forEach((sheetName) => {
           const grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '' })
 
           // The header row may sit below a title or blank rows; use the first row (of the top 20) that has an email header.
@@ -311,11 +335,11 @@ const extractContactsFromFile = (file, { validateEmail = true } = {}, mode, colu
         })
 
         if (!foundEmailColumn) {
-          reject(new Error(`No "${columns.email}" column found in the uploaded file.`))
+          reject(new Error(`No "${columns.email}" column found${inSheet(onlySheet)}.`))
           return
         }
         if (!foundNameColumn) {
-          reject(new Error(`No "${columns.contactName}" column found in the uploaded file.`))
+          reject(new Error(`No "${columns.contactName}" column found${inSheet(onlySheet)}.`))
           return
         }
         resolve(records)

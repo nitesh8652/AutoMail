@@ -187,6 +187,13 @@ export const clearEmailHistory = () =>
 export const fetchSenders = async () =>
   (await requestJson('/api/senders', undefined, 'Failed to load the sending addresses.')).senders
 
+// Automatic Warehouse follow-ups: { followUps, maxFollowUps, intervalDays, cc }.
+export const fetchWarehouseFollowUps = () =>
+  requestJson('/api/warehouse-followups', undefined, 'Failed to load the warehouse follow-ups.')
+
+export const stopWarehouseFollowUp = (id) =>
+  postJson(`/api/warehouse-followups/${id}/stop`, {}, 'Failed to stop the follow-ups.')
+
 // Shared across devices: counted by the server from every email it sends.
 export const fetchTodayEmailStats = () =>
   requestJson('/api/email-stats/today', undefined, "Failed to load today's email count.")

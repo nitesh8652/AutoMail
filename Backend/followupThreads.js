@@ -68,4 +68,45 @@ const findLastSentTo = async (emails) => {
   }
 }
 
-module.exports = { findLastSentTo }
+// For each address, whether it has emailed this mailbox on or after `since` (a Date per address).
+// Searches All Mail, so replies that were archived or labelled still count. `auth` is { user, pass }.
+const findRepliesFrom = async (auth, sinceByEmail) => {
+  const client = new ImapFlow({ host: 'imap.gmail.com', port: 993, secure: true, auth, logger: false })
+  try {
+    await client.connect()
+  } catch (error) {
+    throw new Error(
+      error.authenticationFailed
+        ? `Gmail rejected the IMAP login for ${auth.user}. Check the app password and that IMAP is enabled.`
+        : `Could not connect to Gmail IMAP — ${error.message}`
+    )
+  }
+
+  try {
+    const boxes = await client.list()
+    const box = boxes.find((entry) => entry.specialUse === '\\All') || boxes.find((entry) => entry.path === 'INBOX')
+    const lock = await client.getMailboxLock(box.path, { readOnly: true })
+    try {
+      const results = {}
+      for (const [email, since] of Object.entries(sinceByEmail)) {
+        // IMAP's FROM search is a substring match, so confirm the exact sender on the newest few.
+        const uids = ((await client.search({ from: email, since }, { uid: true })) || []).sort((a, b) => b - a)
+        results[email] = false
+        for (const uid of uids.slice(0, MAX_CANDIDATES)) {
+          const message = await client.fetchOne(uid, { envelope: true }, { uid: true })
+          if ((message?.envelope?.from ?? []).some((sender) => String(sender.address ?? '').toLowerCase() === email)) {
+            results[email] = true
+            break
+          }
+        }
+      }
+      return results
+    } finally {
+      lock.release()
+    }
+  } finally {
+    await client.logout().catch(() => {})
+  }
+}
+
+module.exports = { findLastSentTo, findRepliesFrom }
