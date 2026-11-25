@@ -1,4 +1,5 @@
 import {
+  buildDcAdvisorsFollowUpText,
   buildDcAdvisorsText,
   buildHousingFinanceText,
   buildIntelligenceEmail,
@@ -86,6 +87,7 @@ export const generateEmailForRecord = async (record) => {
 const generateTemplatedEmail = async (record) => {
   // Follow-ups use a fixed template, so "regenerate" just rebuilds it.
   if (record.mode === 'nbfcFollowUp') return buildNbfcFollowUpText(record.companyName, record.thread, record.senderName)
+  if (record.mode === 'dcAdvisorsFollowUp') return buildDcAdvisorsFollowUpText(record, record.thread)
   if (record.mode === 'intelligenceFollowUp') return buildIntelligenceFollowUpText(record.companyName, record.thread)
   // Housing Finance uses a fixed template; the company name goes in exactly as written in the sheet.
   if (record.mode === 'housing') return buildHousingFinanceText(record.companyName)
@@ -170,11 +172,11 @@ export const logIntelligenceEmail = (entry) =>
 export const fetchEmailHistory = async () =>
   (await requestJson('/api/email-history', undefined, 'Failed to load the email history.')).history
 
-// Last email sent to each address (looked up in Gmail's Sent folder), keyed by lowercased email.
-export const fetchFollowUpThreads = async (emails) => {
+// Last email sent to each address (looked up in that mailbox's Gmail Sent folder: 'main' or 'dc'), keyed by lowercased email.
+export const fetchFollowUpThreads = async (emails, mailbox = 'main') => {
   const { threads } = await requestJson(
     '/api/followup/threads',
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emails }) },
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emails, mailbox }) },
     'Failed to look up earlier emails in Gmail.'
   )
   return threads

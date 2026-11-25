@@ -30,12 +30,13 @@ const findInSent = async (client, email) => {
 
 // For each address, the latest email this Gmail account sent to it (from the app or by hand),
 // so a follow-up can be sent as a reply in that thread.
-const findLastSentTo = async (emails) => {
+// `auth` ({ user, pass }) defaults to the main mailbox.
+const findLastSentTo = async (emails, auth = { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }) => {
   const client = new ImapFlow({
     host: 'imap.gmail.com',
     port: 993,
     secure: true,
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+    auth,
     logger: false,
   })
 

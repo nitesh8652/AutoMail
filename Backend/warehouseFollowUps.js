@@ -1,5 +1,5 @@
 const express = require('express')
-const { findRepliesFrom } = require('./followupThreads')
+const { findRepliesFrom, findLastSentTo } = require('./followupThreads')
 
 // Every Warehouse email sent from the app gets automatic follow-ups: one every 10 days, 4 in total,
 // as replies in the same Gmail thread with Himanshu in CC. They stop early if the recipient replies.
@@ -25,10 +25,11 @@ const toReplySubject = (subject) => {
 
 const buildFollowUpText = (greeting) =>
   `${greeting}\n\n` +
-  `Hope you are doing well.\n\n` +
-  `Just following up on my earlier email regarding the Integrated Warehousing, Logistics & Industrial Park on the Hyderabad–Vijayawada Highway, Telangana — ` +
-  `offering covered and cold storage, an operational railway siding, and industrial space for leasing, outright purchase or Built-to-Suit.\n\n` +
-  `Would you be available for a brief discussion or site visit at your convenience?\n\n` +
+  `Greetings From Express Rupya Capital Advisors!\n\n` +
+  `This is a gentle follow-up regarding our integrated warehousing and logistics facility on the Hyderabad–Vijayawada Highway, Telangana, ` +
+  `offering covered warehousing, an operational railway siding, industrial space and Built-to-Suit solutions.\n\n` +
+  `Kindly share your feedback and let us know if your organisation has any current or upcoming warehousing, storage, logistics or industrial space requirements.\n\n` +
+  `We would be happy to discuss suitable options at your convenience.\n\n` +
   `Best regards,\n` +
   `Sushant Dalvi\n` +
   `Express Rupya Capital Advisors\n` +
@@ -106,15 +107,21 @@ const createWarehouseFollowUps = (deps) => {
     ])
 
   // Sends the next follow-up for one row. Resolves to 'sent', 'failed' or 'cap' (daily limit reached).
-  const sendOne = (row) => {
+  // `thread` is the latest email found in the Debt Desk Sent folder for this address (same lookup the NBFC
+  // follow-ups use), so the reply lands in the Gmail conversation as it really is; the stored ids are the fallback.
+  const sendOne = (row, thread) => {
     const mailbox = mailboxFor('warehouse')
     return runInMailboxQueue(mailbox.key, async () => {
       const cap = mailboxCaps[mailbox.key]
       if ((await countTodayByMailbox())[mailbox.key].sent >= cap) return 'cap'
 
-      const subject = toReplySubject(row.subject)
+      const found = thread?.found ? thread : null
+      const subject = toReplySubject(found?.subject || row.subject)
       const text = buildFollowUpText(greetingFor(row.director_name))
-      const references = [...parseReferences(row.references_json), ...(row.last_message_id ? [row.last_message_id] : [])]
+      const replyTo = found?.messageId || row.last_message_id
+      const references = found
+        ? [...new Set([...(found.references || []), found.messageId])]
+        : [...parseReferences(row.references_json), ...(row.last_message_id ? [row.last_message_id] : [])]
       const meta = { type: 'warehouseFollowUp', companyName: row.company_name, directorName: row.director_name }
       try {
         const info = await mailbox.transporter.sendMail({
@@ -123,7 +130,7 @@ const createWarehouseFollowUps = (deps) => {
           cc: FOLLOW_UP_CC,
           subject,
           text,
-          ...(row.last_message_id && { inReplyTo: row.last_message_id, references }),
+          ...(replyTo && { inReplyTo: replyTo, references }),
         })
         await logSend(row.to_email, subject, 'sent', null, meta)
         const sentCount = row.followups_sent + 1
@@ -136,7 +143,7 @@ const createWarehouseFollowUps = (deps) => {
            WHERE id = ?`,
           [
             sentCount,
-            info.messageId || row.last_message_id,
+            info.messageId || replyTo,
             JSON.stringify(references.slice(-20)),
             now,
             done ? null : new Date(now.getTime() + FOLLOW_UP_INTERVAL_DAYS * DAY_MS),
@@ -183,6 +190,14 @@ const createWarehouseFollowUps = (deps) => {
         return
       }
 
+      // A failed lookup isn't fatal: the stored message ids still thread the reply.
+      let threads = {}
+      try {
+        threads = await findLastSentTo(rows.map((row) => row.to_email), auth)
+      } catch (error) {
+        console.warn('Warehouse follow-ups: Sent folder lookup failed, using stored thread ids:', error.message)
+      }
+
       for (const row of rows) {
         if (replied[row.to_email]) {
           await pool.query(
@@ -191,7 +206,7 @@ const createWarehouseFollowUps = (deps) => {
           )
           continue
         }
-        const result = await sendOne(row)
+        const result = await sendOne(row, threads[row.to_email])
         // Daily limit hit: the rest stay due and go out in a later round.
         if (result === 'cap') break
         await wait(SEND_GAP_MS)

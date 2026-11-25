@@ -263,6 +263,7 @@ const Hero = () => {
     </section>
     {mode === 'nbfc' && <NbfcFollowUp />}
     {isIntelligence && <NbfcFollowUp variant="intelligence" />}
+    {mode === 'dcAdvisors' && <NbfcFollowUp variant="dcAdvisors" />}
     {mode === 'warehouse' && <WarehouseFollowUps />}
     </>
   )

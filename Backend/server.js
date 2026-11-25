@@ -63,7 +63,7 @@ const warehouseTransporter = nodemailer.createTransport({ service: 'gmail', auth
 
 // Picks the sending mailbox for an email type; `missing` names the env vars when it isn't configured.
 const mailboxFor = (type) => {
-  if (type === 'dcAdvisors') {
+  if (type === 'dcAdvisors' || type === 'dcAdvisorsFollowUp') {
     return {
       key: 'dc',
       transporter: dcTransporter,
@@ -103,7 +103,7 @@ const startOfTodayIST = () => {
   return new Date(now - (now % (24 * 60 * 60 * 1000)) - IST_OFFSET_MS)
 }
 
-const EMAIL_TYPES = ['realEstate', 'nbfc', 'nbfcFollowUp', 'intelligence', 'intelligenceFollowUp', 'housing', 'dcAdvisors', 'warehouse', 'warehouseFollowUp']
+const EMAIL_TYPES = ['realEstate', 'nbfc', 'nbfcFollowUp', 'intelligence', 'intelligenceFollowUp', 'housing', 'dcAdvisors', 'dcAdvisorsFollowUp', 'warehouse', 'warehouseFollowUp']
 
 // email_send_log gained columns for the Status history; add them once if this database predates them.
 const HISTORY_COLUMNS = {
@@ -217,7 +217,7 @@ app.delete('/api/email-history', async (req, res) => {
 const MAILBOX_CAPS = { main: DAILY_EMAIL_CAP, dc: DC_DAILY_EMAIL_CAP, warehouse: WAREHOUSE_DAILY_EMAIL_CAP }
 const countTodayByMailbox = async () => {
   const [rows] = await pool.query(
-    `SELECT CASE WHEN email_type = 'dcAdvisors' THEN 'dc'
+    `SELECT CASE WHEN email_type IN ('dcAdvisors', 'dcAdvisorsFollowUp') THEN 'dc'
                  WHEN email_type IN ('warehouse', 'warehouseFollowUp') THEN 'warehouse' ELSE 'main' END AS mailbox,
             COALESCE(SUM(status = 'sent'), 0) AS sent, COALESCE(SUM(status = 'failed'), 0) AS failed
      FROM email_send_log WHERE created_at >= ? GROUP BY mailbox`,
@@ -390,7 +390,9 @@ const buildRealEstatePrompt = (companyName, site) =>
   `- Start with "As ${companyName} advances/progresses/expands…" or "With ${possessive(companyName)}…", like the examples ` +
   `(you may shorten the name the way the company itself does, e.g. drop "Private Limited").\n` +
   `- Name what they actually build, from the website text: segments (premium residential, plotted development, villas, integrated townships, ` +
-  `Grade-A commercial, warehousing, retail, built-to-suit), a recent move or flagship project, and the city or cities they build in.\n` +
+  `Grade-A commercial, warehousing, retail, built-to-suit), a recent move into a new segment or city, and the city or cities they build in.\n` +
+  `- NEVER name any project, building, township or development by its own name (e.g. no "Prestige Lakeside Habitat", no "XYZ Heights") — ` +
+  `describe only the kind of development and the city.\n` +
   `- Then tie it to optimising borrowing costs, securing competitive funding for expansion, or refinancing existing borrowings.\n` +
   `- Use only facts from the website text. No figures unless they appear there. Never say or imply that we looked at their website.\n` +
   (site.ok ? '' : `- Since nothing is known about them, keep it general (their real estate developments and growth) without specific claims.\n`) +
@@ -509,7 +511,20 @@ warehouseFollowUps.start()
 
 const MAX_FOLLOW_UP_LOOKUPS = 500
 
-// Finds the last email sent to each address in Gmail's Sent folder, for threading NBFC follow-ups.
+// IMAP login for each mailbox's Sent folder lookup; DC searches the primary DC account (its alias sends land there too).
+const imapLoginFor = (mailbox) => {
+  if (mailbox === 'dc') {
+    return process.env.DC_EMAIL_USER && process.env.DC_EMAIL_PASS
+      ? { auth: { user: process.env.DC_EMAIL_USER, pass: process.env.DC_EMAIL_PASS } }
+      : { missing: 'DC_EMAIL_USER/DC_EMAIL_PASS' }
+  }
+  return process.env.EMAIL_USER && process.env.EMAIL_PASS
+    ? { auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS } }
+    : { missing: 'EMAIL_USER/EMAIL_PASS' }
+}
+
+// Finds the last email sent to each address in the mailbox's Sent folder, for threading follow-ups
+// (NBFC and Intelligence use the main mailbox, DC Advisors its own).
 app.post('/api/followup/threads', async (req, res) => {
   const emails = [
     ...new Set(
@@ -522,17 +537,33 @@ app.post('/api/followup/threads', async (req, res) => {
   if (emails.length > MAX_FOLLOW_UP_LOOKUPS) {
     return res.status(400).json({ error: `Too many addresses — upload at most ${MAX_FOLLOW_UP_LOOKUPS} at a time.` })
   }
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    return res.status(500).json({ error: 'EMAIL_USER/EMAIL_PASS are not configured on the server.' })
+  const login = imapLoginFor(req.body?.mailbox === 'dc' ? 'dc' : 'main')
+  if (login.missing) {
+    return res.status(500).json({ error: `${login.missing} are not configured on the server.` })
   }
 
   try {
-    res.json({ threads: await findLastSentTo(emails) })
+    res.json({ threads: await findLastSentTo(emails, login.auth) })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message || 'Failed to look up earlier emails.' })
   }
 })
+
+const escapeHtml = (value) =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+// Templates mark bold text with **...** (DC Advisors). Such emails go out as HTML with real bold,
+// plus a plain-text copy without the asterisks; everything else stays plain text as before.
+const BOLD = /\*\*([^*\n]+)\*\*/g
+const withBold = (text) => {
+  if (!text.match(BOLD)) return { text }
+  const html = escapeHtml(text).replace(BOLD, '<strong>$1</strong>').replace(/\n/g, '<br>')
+  return {
+    text: text.replace(BOLD, '$1'),
+    html: `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.5;">${html}</div>`,
+  }
+}
 
 app.post('/api/send-email', async (req, res) => {
   const to = String(req.body?.to ?? '').trim()
@@ -578,7 +609,7 @@ app.post('/api/send-email', async (req, res) => {
         // Warehouse emails copy Himanshu (the follow-ups do too).
         ...(meta.type === 'warehouse' && { cc: WAREHOUSE_CC }),
         subject: subject || 'Regarding your project',
-        text,
+        ...withBold(text),
         inReplyTo,
         references,
       })

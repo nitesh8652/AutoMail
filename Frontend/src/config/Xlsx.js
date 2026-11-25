@@ -251,9 +251,37 @@ export const buildDcAdvisorsSubject = (company) => {
   return name ? `${name} - ${DC_ADVISORS_SUBJECT_SUFFIX}` : DC_ADVISORS_SUBJECT_SUFFIX
 }
 
+const DC_SIGNATURE =
+  `Best Regards,\n` +
+  `Divya Jain\n` +
+  `Express Rupya Capital Advisors\n` +
+  `+91 84540 38196\n` +
+  `www.expressrupya.com`
+
 // Subject uses the company_name column; the greeting uses contact_name.
+// **...** is sent as real bold (the server turns it into HTML).
 export const buildDcAdvisorsText = ({ company, contactName }) =>
   `Subject: ${buildDcAdvisorsSubject(company)}\n\n` +
+  `Dear ${toDcGreetingName(contactName) || 'Sir/Madam'},\n\n` +
+  `Greetings from **Express Rupya Capital Advisors!**\n\n` +
+  `I am Divya Jain, representing Express Rupya Capital Advisors, an India-based **Real Estate and Financial Advisory firm** specialising in strategic land acquisition, infrastructure advisory and capital raising for data centre developers, hyperscalers and global infrastructure investors.\n\n` +
+  `India is emerging as a significant destination for global data centre investments, supported by expanding digital infrastructure, AI-driven demand and favourable government initiatives.\n\n` +
+  `Notably, the **Union Budget 2026–27 introduced an income tax exemption framework extending until 31 March 2047** for eligible foreign cloud service providers utilising specified data centre infrastructure in India, subject to prescribed eligibility and regulatory conditions.\n\n` +
+  `**How Express Rupya Can Support Your India Expansion**\n\n` +
+  `- **Strategic Real Estate & Land Acquisition:** Identification, evaluation and facilitation of large land parcels suitable for hyperscale data centres across key Indian markets.\n` +
+  `- **Power & Infrastructure Advisory:** Support for grid connectivity, power sourcing, substation infrastructure, fibre connectivity and essential utilities.\n` +
+  `- **Debt & Equity Capital Advisory:** Arranging institutional financing, structured debt, private credit and equity capital for land acquisition and infrastructure development.\n` +
+  `- **Cooling & Thermal Infrastructure:** Facilitating partnerships for efficient cooling, heat management and sustainable data centre solutions.\n` +
+  `- **Transaction Facilitation:** Coordination with landowners, infrastructure providers, government authorities and relevant stakeholders to support project execution.\n\n` +
+  `With our experience across **real estate transactions, institutional financing and infrastructure opportunities**, we aim to serve as a strategic local partner for international companies evaluating entry or expansion in India.\n\n` +
+  `We would welcome an opportunity to understand your India expansion strategy and explore potential areas of collaboration.\n\n` +
+  `**Would you be available for a brief 20–30 minute virtual introductory meeting at your convenience?**\n\n` +
+  `We look forward to connecting with you.\n\n` +
+  DC_SIGNATURE
+
+// ---------- DC Advisors follow-up (same flow as NBFC: replies in the thread of the last email, sent from the DC mailbox) ----------
+
+export const buildDcAdvisorsFollowUpEmail = (contactName) =>
   `Dear ${toDcGreetingName(contactName) || 'Sir/Madam'},\n\n` +
   `Greetings from Express Rupya Capital Advisors!\n\n` +
   `I am writing to follow up on our earlier email regarding potential collaboration to support your data centre expansion and investment opportunities in India.\n\n` +
@@ -261,11 +289,23 @@ export const buildDcAdvisorsText = ({ company, contactName }) =>
   `We would appreciate an opportunity to understand your expansion plans and discuss potential synergies.\n\n` +
   `Could you kindly suggest a convenient time for a brief virtual introductory meeting?\n\n` +
   `Looking forward to your response.\n\n` +
-  `Best Regards,\n` +
-  `Divya Jain\n` +
-  `Express Rupya Capital Advisors\n` +
-  `+91 84540 38196\n` +
-  `www.expressrupya.com`
+  DC_SIGNATURE
+
+// With a thread, the subject is "Re: <original subject>" so Gmail keeps it in the same conversation.
+export const buildDcAdvisorsFollowUpText = ({ company, contactName }, thread = null) =>
+  `Subject: ${(thread && toReplySubject(thread.subject)) || buildDcAdvisorsSubject(company)}\n\n` +
+  buildDcAdvisorsFollowUpEmail(contactName)
+
+// Same card shape as the NBFC follow-ups: no earlier email found -> "Send as new" or "Skip" on the card.
+export const toDcAdvisorsFollowUpResult = (record, thread = null) => ({
+  ...record,
+  mode: 'dcAdvisorsFollowUp',
+  thread,
+  threadMissing: !thread,
+  ...(thread ? {} : { selected: false }),
+  generatedEmail: buildDcAdvisorsFollowUpText(record, thread),
+  generationError: null,
+})
 
 // Reads a sheet with email + contact name columns (company name optional) into records for `mode`.
 // `columns` names the headers in error messages.

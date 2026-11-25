@@ -5,7 +5,9 @@ import {
   DEFAULT_FOLLOW_UP_SENDER,
   INTELLIGENCE_FOLLOW_UP_SENDER,
   NBFC_FOLLOW_UP_SENDERS,
+  extractDcAdvisorsFromFile,
   extractEmailsFromFile,
+  toDcAdvisorsFollowUpResult,
   toIntelligenceFollowUpResult,
   toNbfcFollowUpResult,
 } from '../config/Xlsx'
@@ -25,14 +27,29 @@ const readSavedSender = () => {
   }
 }
 
-// Intelligence follow-ups always go out signed by Amit, so there is no sender picker.
+const COMPANY_EMAIL_SHEET = [{ required: ['Company Name', 'Email'] }]
+const COMPANY_EMAIL_HINT = (
+  <>Upload a sheet with <strong>Company Name</strong> and <strong>Email</strong> columns. You can review every email before sending. The company name goes in the subject.</>
+)
+
+// Intelligence follow-ups always go out signed by Amit, DC Advisors by Divya Jain, so there is no sender picker.
+// `mailbox` is whose Sent folder holds the earlier emails (and who sends the follow-up).
 const VARIANTS = {
-  nbfc: { tag: 'NBFC FOLLOW-UP', toResult: toNbfcFollowUpResult },
-  intelligence: { tag: 'INTELLIGENCE FOLLOW-UP', fixedSender: INTELLIGENCE_FOLLOW_UP_SENDER, toResult: toIntelligenceFollowUpResult },
+  nbfc: { tag: 'NBFC FOLLOW-UP', toResult: toNbfcFollowUpResult, extract: extractEmailsFromFile, mailbox: 'main', sheets: COMPANY_EMAIL_SHEET, hint: COMPANY_EMAIL_HINT },
+  intelligence: { tag: 'INTELLIGENCE FOLLOW-UP', fixedSender: INTELLIGENCE_FOLLOW_UP_SENDER, toResult: toIntelligenceFollowUpResult, extract: extractEmailsFromFile, mailbox: 'main', sheets: COMPANY_EMAIL_SHEET, hint: COMPANY_EMAIL_HINT },
+  dcAdvisors: {
+    tag: 'DC ADVISORS FOLLOW-UP',
+    fixedSender: 'Divya Jain',
+    toResult: toDcAdvisorsFollowUpResult,
+    extract: extractDcAdvisorsFromFile,
+    mailbox: 'dc',
+    sheets: [{ required: ['contact_name', 'contact_email'], optional: ['company_name'] }],
+    hint: <>Upload the same sheet as the first email (<strong>contact_name</strong>, <strong>contact_email</strong>). Each follow-up is sent as a reply in the earlier email's thread. You can review every email before sending.</>,
+  },
 }
 
 const NbfcFollowUp = ({ variant = 'nbfc' }) => {
-  const { tag, fixedSender, toResult } = VARIANTS[variant]
+  const { tag, fixedSender, toResult, extract, mailbox, sheets, hint } = VARIANTS[variant]
   const inputRef = useRef(null)
   const navigate = useNavigate()
   const [senderName, setSenderName] = useState(readSavedSender)
@@ -60,13 +77,13 @@ const NbfcFollowUp = ({ variant = 'nbfc' }) => {
     setError(null)
     setLoading(true)
     try {
-      const records = await extractEmailsFromFile(file)
+      const records = await extract(file)
       if (records.length === 0) {
         setError('No valid email addresses found in the uploaded file.')
         return
       }
       // Each follow-up replies to the last email sent to that address, so it lands in the same thread.
-      const threads = await fetchFollowUpThreads(records.map(({ email }) => email))
+      const threads = await fetchFollowUpThreads(records.map(({ email }) => email), mailbox)
       const results = records.map((record) => {
         const thread = threads[record.email.trim().toLowerCase()]
         return toResult(record, thread?.found ? thread : null, senderName)
@@ -105,7 +122,7 @@ const NbfcFollowUp = ({ variant = 'nbfc' }) => {
           <div>
             <span className="mb-[5px] block text-[10px] font-extrabold tracking-[0.13em] text-[#1070BA]">{tag}</span>
             <h2 className="font-heading text-[22px] font-bold tracking-[-0.02em] text-[#102a43]">Follow-up emails</h2>
-            <p className="mt-1 text-[13px] text-[#7c8e9e]">Upload a sheet with <strong>Company Name</strong> and <strong>Email</strong> columns. You can review every email before sending. The company name goes in the subject.</p>
+            <p className="mt-1 text-[13px] text-[#7c8e9e]">{hint}</p>
           </div>
           <span className="rounded-md bg-[#edf7fd] px-[9px] py-1.5 text-[10px] font-extrabold tracking-[0.08em] text-[#1070BA]">.XLSX / .CSV</span>
         </div>
@@ -159,7 +176,7 @@ const NbfcFollowUp = ({ variant = 'nbfc' }) => {
         </button>
 
         <input ref={inputRef} className="sr-only" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { selectFile(event.target.files[0]); event.target.value = '' }} />
-        <SheetGuide sheets={[{ required: ['Company Name', 'Email'] }]} mailbox="main" />
+        <SheetGuide sheets={sheets} mailbox={mailbox} />
 
         <button
           className="mt-[14px] flex h-[52px] w-full items-center justify-center gap-2.5 rounded-xl border-0 bg-[#1070BA] font-bold text-white shadow-[0_10px_22px_rgba(16,112,186,0.22)] transition hover:-translate-y-px hover:bg-[#0c609f] disabled:cursor-not-allowed disabled:bg-[#e9eff3] disabled:text-[#94a5b2] disabled:shadow-none disabled:hover:translate-y-0"
