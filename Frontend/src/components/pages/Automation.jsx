@@ -137,28 +137,33 @@ const WhatsAppSection = ({ projects }) => {
   )
 }
 
+const stripBold = (text) => text.replace(/\*\*(.+?)\*\*/g, '$1')
+
 // Tidies AI output for a plain-text email: markdown bold/headings and the trailing
 // double spaces markdown uses for line breaks ("Best regards,  ").
-const cleanEmailText = (text) =>
-  text
-    .replace(/\*\*(.+?)\*\*/g, '$1')
-    .replace(/^#+\s*/gm, '')
-    .replace(/[ \t]+$/gm, '')
-    .trim()
+// With `keepBold`, **...** stays in so the server sends it as real bold (DC Advisors).
+const cleanEmailText = (text, keepBold = false) => {
+  const cleaned = text.replace(/^#+\s*/gm, '').replace(/[ \t]+$/gm, '').trim()
+  return keepBold ? cleaned : stripBold(cleaned)
+}
 
 const looksLikeGreeting = (line) => /^(dear|hi|hello|greetings|respected|good\s+(morning|afternoon|evening))\b/i.test(line)
 
-const parseGeneratedEmail = (text) => {
-  const trimmed = cleanEmailText(String(text ?? ''))
+// Modes whose templates mark bold with **...**; the server turns it into an HTML email.
+const BOLD_MODES = ['dcAdvisors', 'dcAdvisorsFollowUp']
+
+const parseGeneratedEmail = (text, keepBold = false) => {
+  const trimmed = cleanEmailText(String(text ?? ''), keepBold)
   const match = trimmed.match(/^(?:Subject|Sub)\s*:\s*(.+?)\r?\n+([\s\S]*)$/i)
   if (match) {
-    return { subject: match[1].trim(), body: match[2].trim() }
+    // The subject is always plain text.
+    return { subject: stripBold(match[1]).trim(), body: match[2].trim() }
   }
   // Drafts like "Acme Group | Refinancing\nDear Sir, ..." put the subject on the first line with no "Subject:" label.
   const [firstLine, ...rest] = trimmed.split(/\r?\n/)
   const nextLine = rest.find((line) => line.trim())
   if (firstLine && firstLine.length <= 150 && !looksLikeGreeting(firstLine) && nextLine && looksLikeGreeting(nextLine.trim())) {
-    return { subject: firstLine.trim(), body: rest.join('\n').trim() }
+    return { subject: stripBold(firstLine).trim(), body: rest.join('\n').trim() }
   }
   return { subject: 'Regarding your business', body: trimmed }
 }
@@ -451,7 +456,7 @@ const Automation = () => {
       }
 
       const { project, index } = targets[i]
-      const { subject, body } = parseGeneratedEmail(project.generatedEmail)
+      const { subject, body } = parseGeneratedEmail(project.generatedEmail, BOLD_MODES.includes(project.mode))
       try {
         await sendEmail({
           to: project.email,

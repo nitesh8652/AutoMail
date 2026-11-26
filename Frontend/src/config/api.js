@@ -87,11 +87,11 @@ export const generateEmailForRecord = async (record) => {
 const generateTemplatedEmail = async (record) => {
   // Follow-ups use a fixed template, so "regenerate" just rebuilds it.
   if (record.mode === 'nbfcFollowUp') return buildNbfcFollowUpText(record.companyName, record.thread, record.senderName)
-  if (record.mode === 'dcAdvisorsFollowUp') return buildDcAdvisorsFollowUpText(record, record.thread)
+  if (record.mode === 'dcAdvisorsFollowUp') return buildDcAdvisorsFollowUpText(record, record.thread, record.followUpBody)
   if (record.mode === 'intelligenceFollowUp') return buildIntelligenceFollowUpText(record.companyName, record.thread)
   // Housing Finance uses a fixed template; the company name goes in exactly as written in the sheet.
   if (record.mode === 'housing') return buildHousingFinanceText(record.companyName)
-  // DC Advisors: fixed template; subject from company_name, greeting from contact_name.
+  // DC Advisors: fixed template; subject from company_name, greeting "Dear Sir/Madam".
   if (record.mode === 'dcAdvisors') return buildDcAdvisorsText(record)
   // Warehouse: fixed template; subject from Company Name, greeting from Director Name.
   if (record.mode === 'warehouse') return buildWarehouseText(record)

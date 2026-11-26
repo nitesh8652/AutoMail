@@ -258,11 +258,11 @@ const DC_SIGNATURE =
   `+91 84540 38196\n` +
   `www.expressrupya.com`
 
-// Subject uses the company_name column; the greeting uses contact_name.
+// Subject uses the company_name column; the greeting is always "Dear Sir/Madam".
 // **...** is sent as real bold (the server turns it into HTML).
-export const buildDcAdvisorsText = ({ company, contactName }) =>
+export const buildDcAdvisorsText = ({ company }) =>
   `Subject: ${buildDcAdvisorsSubject(company)}\n\n` +
-  `Dear ${toDcGreetingName(contactName) || 'Sir/Madam'},\n\n` +
+  `Dear Sir/Madam,\n\n` +
   `Greetings from **Express Rupya Capital Advisors!**\n\n` +
   `I am Divya Jain, representing Express Rupya Capital Advisors, an India-based **Real Estate and Financial Advisory firm** specialising in strategic land acquisition, infrastructure advisory and capital raising for data centre developers, hyperscalers and global infrastructure investors.\n\n` +
   `India is emerging as a significant destination for global data centre investments, supported by expanding digital infrastructure, AI-driven demand and favourable government initiatives.\n\n` +
@@ -281,29 +281,22 @@ export const buildDcAdvisorsText = ({ company, contactName }) =>
 
 // ---------- DC Advisors follow-up (same flow as NBFC: replies in the thread of the last email, sent from the DC mailbox) ----------
 
-export const buildDcAdvisorsFollowUpEmail = (contactName) =>
-  `Dear ${toDcGreetingName(contactName) || 'Sir/Madam'},\n\n` +
-  `Greetings from Express Rupya Capital Advisors!\n\n` +
-  `I am writing to follow up on our earlier email regarding potential collaboration to support your data centre expansion and investment opportunities in India.\n\n` +
-  `We would be pleased to explore how Express Rupya can assist with strategic land acquisition, power infrastructure, grid connectivity, and debt/equity financing across key Indian markets.\n\n` +
-  `We would appreciate an opportunity to understand your expansion plans and discuss potential synergies.\n\n` +
-  `Could you kindly suggest a convenient time for a brief virtual introductory meeting?\n\n` +
-  `Looking forward to your response.\n\n` +
-  DC_SIGNATURE
-
-// With a thread, the subject is "Re: <original subject>" so Gmail keeps it in the same conversation.
-export const buildDcAdvisorsFollowUpText = ({ company, contactName }, thread = null) =>
+// The body is exactly what the user typed in the follow-up box (saved in localStorage); **...** becomes bold.
+// With a thread, the subject is "Re: <original subject>" and the email is sent as a reply,
+// so Gmail keeps it in the same conversation as the first email.
+export const buildDcAdvisorsFollowUpText = ({ company }, thread = null, body = '') =>
   `Subject: ${(thread && toReplySubject(thread.subject)) || buildDcAdvisorsSubject(company)}\n\n` +
-  buildDcAdvisorsFollowUpEmail(contactName)
+  String(body ?? '').trim()
 
 // Same card shape as the NBFC follow-ups: no earlier email found -> "Send as new" or "Skip" on the card.
-export const toDcAdvisorsFollowUpResult = (record, thread = null) => ({
+export const toDcAdvisorsFollowUpResult = (record, thread = null, _senderName, followUpBody = '') => ({
   ...record,
   mode: 'dcAdvisorsFollowUp',
   thread,
   threadMissing: !thread,
   ...(thread ? {} : { selected: false }),
-  generatedEmail: buildDcAdvisorsFollowUpText(record, thread),
+  followUpBody,
+  generatedEmail: buildDcAdvisorsFollowUpText(record, thread, followUpBody),
   generationError: null,
 })
 

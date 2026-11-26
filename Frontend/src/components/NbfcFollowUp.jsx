@@ -27,6 +27,18 @@ const readSavedSender = () => {
   }
 }
 
+// DC Advisors follow-up text typed by the user; kept on this browser until they change it.
+const DC_FOLLOW_UP_BODY_KEY = 'dcAdvisorsFollowUpBody'
+const readSavedBody = (key) => {
+  if (!key) return ''
+  try {
+    const saved = JSON.parse(localStorage.getItem(key))
+    return typeof saved === 'string' ? saved : ''
+  } catch {
+    return ''
+  }
+}
+
 const COMPANY_EMAIL_SHEET = [{ required: ['Company Name', 'Email'] }]
 const COMPANY_EMAIL_HINT = (
   <>Upload a sheet with <strong>Company Name</strong> and <strong>Email</strong> columns. You can review every email before sending. The company name goes in the subject.</>
@@ -43,16 +55,21 @@ const VARIANTS = {
     toResult: toDcAdvisorsFollowUpResult,
     extract: extractDcAdvisorsFromFile,
     mailbox: 'dc',
+    // No fixed template: the user writes the follow-up and it is sent exactly as typed.
+    bodyStorageKey: DC_FOLLOW_UP_BODY_KEY,
     sheets: [{ required: ['contact_name', 'contact_email'], optional: ['company_name'] }],
     hint: <>Upload the same sheet as the first email (<strong>contact_name</strong>, <strong>contact_email</strong>). Each follow-up is sent as a reply in the earlier email's thread. You can review every email before sending.</>,
   },
 }
 
 const NbfcFollowUp = ({ variant = 'nbfc' }) => {
-  const { tag, fixedSender, toResult, extract, mailbox, sheets, hint } = VARIANTS[variant]
+  const { tag, fixedSender, toResult, extract, mailbox, sheets, hint, bodyStorageKey } = VARIANTS[variant]
   const inputRef = useRef(null)
   const navigate = useNavigate()
   const [senderName, setSenderName] = useState(readSavedSender)
+  const [followUpBody, setFollowUpBody] = useState(() => readSavedBody(bodyStorageKey))
+  const needsBody = Boolean(bodyStorageKey)
+  const bodyMissing = needsBody && !followUpBody.trim()
   const [file, setFile] = useState(null)
   const [dragging, setDragging] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -73,7 +90,7 @@ const NbfcFollowUp = ({ variant = 'nbfc' }) => {
   // Builds the follow-up emails and opens them on the review page, where they can be
   // checked, excluded and sent — the same flow as Marketing.
   const handleReview = async () => {
-    if (!file) return
+    if (!file || bodyMissing) return
     setError(null)
     setLoading(true)
     try {
@@ -86,7 +103,7 @@ const NbfcFollowUp = ({ variant = 'nbfc' }) => {
       const threads = await fetchFollowUpThreads(records.map(({ email }) => email), mailbox)
       const results = records.map((record) => {
         const thread = threads[record.email.trim().toLowerCase()]
-        return toResult(record, thread?.found ? thread : null, senderName)
+        return toResult(record, thread?.found ? thread : null, senderName, followUpBody)
       })
       safeSetItem('automationResults', results)
       navigate('/automation', { state: { results } })
@@ -157,6 +174,24 @@ const NbfcFollowUp = ({ variant = 'nbfc' }) => {
           )}
         </div>
 
+        {needsBody && (
+          <div className="mb-5">
+            <label htmlFor="follow-up-body" className="mb-2 block text-[11px] font-extrabold tracking-[0.08em] text-[#7c8e9e]">FOLLOW-UP EMAIL</label>
+            <textarea
+              id="follow-up-body"
+              rows={10}
+              value={followUpBody}
+              onChange={(event) => {
+                setFollowUpBody(event.target.value)
+                safeSetItem(bodyStorageKey, event.target.value)
+              }}
+              placeholder="Write the follow-up email here. It is sent exactly as written, as a reply in the same Gmail thread as the first email. Wrap text in **double asterisks** to make it bold."
+              className="w-full resize-y rounded-xl border border-[#d6e6f1] bg-white px-4 py-3 text-[13px] leading-relaxed text-[#102a43] outline-none transition placeholder:text-[#a3b3c0] focus:border-[#1070BA] focus:shadow-[0_0_0_3px_rgba(16,112,186,0.12)]"
+            />
+            <p className="mt-1 text-[11px] text-[#7c8e9e]">Saved on this browser until you change it.</p>
+          </div>
+        )}
+
         <button
           className={`flex min-h-[150px] w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-[1.5px] border-dashed px-3.5 py-[22px] transition duration-200 ${dragging ? '-translate-y-0.5 border-[#1070BA] bg-[#eff8fe]' : 'border-[#afd2e9] bg-[#f7fbfe] hover:-translate-y-0.5 hover:border-[#1070BA] hover:bg-[#eff8fe]'}`}
           type="button"
@@ -181,10 +216,10 @@ const NbfcFollowUp = ({ variant = 'nbfc' }) => {
         <button
           className="mt-[14px] flex h-[52px] w-full items-center justify-center gap-2.5 rounded-xl border-0 bg-[#1070BA] font-bold text-white shadow-[0_10px_22px_rgba(16,112,186,0.22)] transition hover:-translate-y-px hover:bg-[#0c609f] disabled:cursor-not-allowed disabled:bg-[#e9eff3] disabled:text-[#94a5b2] disabled:shadow-none disabled:hover:translate-y-0"
           type="button"
-          disabled={!file || loading}
+          disabled={!file || bodyMissing || loading}
           onClick={handleReview}
         >
-          {loading ? 'Finding earlier emails…' : 'Review emails'}
+          {loading ? 'Finding earlier emails…' : bodyMissing ? 'Write the follow-up email first' : 'Review emails'}
           <ChevronRight className="w-[18px]" aria-hidden="true" />
         </button>
       </div>
